@@ -1,8 +1,8 @@
 # TrustFactor
 
-Sadly there are a bunch of bad actors running around trying to give mod teams and other players a bad time by botting, spamming or using illegal image material for ingame sprays. While there is no good way to completely prevent this from happening, there is hop to in making it so tedious for these people that they (hopefully) simply don't bother any further.
+Sadly there are a bunch of bad actors running around trying to give mod teams and other players a bad time by botting, spamming or using illegal image material for ingame sprays. While there is no good way to completely prevent this from happening, there is hope in making it so tedious for these people that they simply don't bother any further.
 
-This plugins aim to automate some legitimacy checks usually performed on players for SourceMod plugins. The provided API can be used by other plugins to limit features unless certain criteria are met. For example using chat or sprays could be limited until a certain amount of time was spent on the server.
+This plugin aims to automate some legitimacy checks usually performed on players for SourceMod plugins. The provided API can be used by other plugins to limit features unless certain criteria are met. For example using chat or sprays could be limited until a certain amount of time was spent on the server.
 Server moderators can also check a players trust flags with `/checktrust player`.
 
 ## TrustFlags and TrustLevel
