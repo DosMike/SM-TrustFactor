@@ -198,49 +198,49 @@ public Action Command_CheckTrust(int client, int args) {
 			
 			if (steamDlcId) {
 				condition = cdata.premium;
-				CPrintToChat(client, "  Is Free2Play: {%s}%s", colors[condition?0:2], ynstr[condition?1:0]);
+				CReplyToCommand(client, "  Is Free2Play: {%s}%s", colors[condition?0:2], ynstr[condition?1:0]);
 			}
 			
 			condition = cdata.isDonor;
-			CPrintToChat(client, "  Is Donator: {%s}%s", colors[condition?0:2], ynstr[condition?0:1]);
+			CReplyToCommand(client, "  Is Donator: {%s}%s", colors[condition?0:2], ynstr[condition?0:1]);
 			
 			condition = cdata.playtime >= trust_servertime;
-			CPrintToChat(client, "  Playtime Server: {%s}%d/%d min", colors[condition?0:2], cdata.playtime, trust_servertime);
+			CReplyToCommand(client, "  Playtime Server: {%s}%d/%d min", colors[condition?0:2], cdata.playtime, trust_servertime);
 			
 			condition = cdata.gametime >= trust_gametime;
 			if (swapi_checks & SWAPI_CHECK_GAMETIME)
-				CPrintToChat(client, "  Playtime Global: {%s}%d/%d hr", colors[condition?0:2], cdata.gametime, trust_gametime);
+				CReplyToCommand(client, "  Playtime Global: {%s}%d/%d hr", colors[condition?0:2], cdata.gametime, trust_gametime);
 			else
-				CPrintToChat(client, "  Playtime Global: {gold}%d hr", cdata.gametime, trust_gametime);
+				CReplyToCommand(client, "  Playtime Global: {gold}%d hr", cdata.gametime, trust_gametime);
 			
 			condition = cdata.profilePublic;
 			a = (swapi_checks & SWAPI_CHECK_PROFILE) ? (condition?0:2) : 1;
-			CPrintToChat(client, "  Public Profile: {%s}%s", colors[a], ynstr[condition?0:1]);
+			CReplyToCommand(client, "  Public Profile: {%s}%s", colors[a], ynstr[condition?0:1]);
 			
 			condition = cdata.profileSetup;
 			a = (swapi_checks & SWAPI_CHECK_PROFILE) ? (condition?0:2) : 1;
-			CPrintToChat(client, "  Profile Set up: {%s}%s", colors[a], ynstr[condition?0:1]);
+			CReplyToCommand(client, "  Profile Set up: {%s}%s", colors[a], ynstr[condition?0:1]);
 			
 			if (cdata.profileAge) { a=0;b=1; }
 			else if (cdata.profilePublic) { a=3;b=2; }
 			else { a=2;b=0; }
 			if ((swapi_checks & SWAPI_CHECK_PROFILE) && a==3) a=1;
-			CPrintToChat(client, "  Profile New: {%s}%s", colors[a], ynstr[b]);
+			CReplyToCommand(client, "  Profile New: {%s}%s", colors[a], ynstr[b]);
 			
 			if (trust_communityLevel<1)
-				CPrintToChat(client, "  Profile Level: {gold}%d", cdata.communityLevel);
+				CReplyToCommand(client, "  Profile Level: {gold}%d", cdata.communityLevel);
 			else {
 				condition = cdata.communityLevel >= trust_communityLevel;
-				CPrintToChat(client, "  Profile Level: {%s}%d/%d", colors[condition?0:2], cdata.communityLevel, trust_communityLevel);
+				CReplyToCommand(client, "  Profile Level: {%s}%d/%d", colors[condition?0:2], cdata.communityLevel, trust_communityLevel);
 			}
 			
 			if (trust_communityLevel<1)
-				CPrintToChat(client, "  Community Badge: {gold}%d", cdata.badgeLevel);
+				CReplyToCommand(client, "  Community Badge: {gold}%d", cdata.badgeLevel);
 			else {
 				condition = cdata.badgeLevel >= trust_pocbadge;
-				CPrintToChat(client, "  Community Badge: {%s}%d/%d", colors[condition?0:2], cdata.badgeLevel, trust_pocbadge);
+				CReplyToCommand(client, "  Community Badge: {%s}%d/%d", colors[condition?0:2], cdata.badgeLevel, trust_pocbadge);
 			}
-			CPrintToChat(client, "  {gold}Trust Level: %d/9", cdata.trustLevel);
+			CReplyToCommand(client, "  {gold}Trust Level: %d/9", cdata.trustLevel);
 		}
 	}
 	return Plugin_Handled;

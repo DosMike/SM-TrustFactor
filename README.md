@@ -70,13 +70,13 @@ sm_trustfactor_checksteamlvl "1" // -> will fetch community level, badge level
 
 The PHP script will cache player data for 12 hours, so if a player for example barely does not have enough game time, they will have to wait another 12 hours before that value is checked again. If certain checks are not enabled, the associated trust factors will appear as failed to the plugin. This is done also, so you're not exhausting your 100000 request/day limit any time soon.
 
+## Dependencies
+
+* Requires SteamWorks for networking (https://github.com/KyleSanderson/SteamWorks)
+* MultiColor is required for compile only (https://github.com/Bara/Multi-Colors)
+
 ## Plugin Devs
 
 You can check players trust levels actively or by callbacks. The trust level is only available for players (not bots) and only after `OnClientTrustFactorLoaded`. You can also check that with `IsClientTrustFactorLoaded`. If a players TrustFactor changes throughout them playing, you will get `OnClientTrustFactorChanged`.
 
 It is recommended that you check trust levels with `CheckClientTrust`, but there are a few other options.
-
-## Dependencies
-
-Requires SteamWorks for networking (https://github.com/KyleSanderson/SteamWorks)
-MultiColor is required for compile only (https://github.com/Bara/Multi-Colors)
