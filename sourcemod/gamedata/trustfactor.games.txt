@@ -1,0 +1,17 @@
+"Games"
+{
+	"tf"
+	{
+		"Keys"
+		{
+			"PremiumAppId" "459"
+		}
+	}
+	"csgo"
+	{
+		"Keys"
+		{
+			"PremiumAppId" "624820"
+		}
+	}
+}
