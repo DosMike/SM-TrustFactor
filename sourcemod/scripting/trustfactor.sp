@@ -111,7 +111,7 @@ public void OnPluginStart() {
 	cvar_CheckProfile =        CreateConVar("sm_trustfactor_checkprofile", "0", "Request steam profile to be checked", FCVAR_HIDDEN, true, 0.0, true, 1.0);
 	cvar_CheckSteamLevel =     CreateConVar("sm_trustfactor_checksteamlvl", "0", "Request steam community level and poc badge level to be checked", FCVAR_HIDDEN, true, 0.0, true, 1.0);
 	cvar_CheckGametime =       CreateConVar("sm_trustfactor_checkgametime", "0", "Request global gametime to be checked", FCVAR_HIDDEN, true, 0.0, true, 1.0);
-	cvar_PlayerCacheURL =      CreateConVar("sm_trustfactor_playercacheurl", "", "Specifies the steam webapi proxy", FCVAR_HIDDEN|FCVAR_PROTECTED);
+	cvar_PlayerCacheURL =      CreateConVar("sm_trustfactor_playercacheurl", "", "Specifies the steam webapi proxy, set empty to not use any profile data", FCVAR_HIDDEN|FCVAR_PROTECTED);
 	cvar_TrustCommunityLevel = CreateConVar("sm_trustfactor_minsteamlevel", "2", "Steam Community Level required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN, true, 0.0);
 	cvar_TrustGametime =       CreateConVar("sm_trustfactor_mingametime", "24", "Global game playtime [hr] required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN, true, 0.0);
 	cvar_TrustServertime =     CreateConVar("sm_trustfactor_minservertime", "300", "Playtime on server(network) [min] required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN, true, 0.0);
@@ -270,9 +270,16 @@ public void OnClientAuthorized(int client, const char[] auth) {
 	GetClientTrustData(client, cdata);
 	if (steamDlcId) cdata.premium = SteamWorks_HasLicenseForApp(client, steamDlcId) == k_EUserHasLicenseResultHasLicense;
 	cdata.loaded |= LOADED_PREMIUM;
+	
+	//manually "finish" profile data if web disabled
+	if (playerCacheUrl[0]==0 || swapi_checks==0) {
+		cdata.loaded |= LOADED_PROFILEDATA;
+		SetClientTrustData(client, cdata);
+		if (cdata.loaded == LOADED_ALL) UpdateTrustfactor(client);
+		return;
+	}
 	SetClientTrustData(client, cdata);
 	
-	if (playerCacheUrl[0]==0) return;
 	char buffer[32];
 	PrintToServer("[Trustfactor] Connecting with cache at %s for %N: %s, %d, %d", playerCacheUrl, client, client_steamIds[client], steamAppId, swapi_checks);
 	Handle request = SteamWorks_CreateHTTPRequest(k_EHTTPMethodGET, playerCacheUrl);
