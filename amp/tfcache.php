@@ -17,7 +17,7 @@ function cget($var) {
 }
 //validate request
 $headers = apache_request_headers();
-if (/*empty($headers['X-Trustfactor']) || */!cget('steamId') || !cget('appId') || !cget('cdata')) {
+if (empty($headers['X-Trustfactor']) || !cget('steamId') || !cget('appId') || !cget('cdata')) {
 	cancel("Format");
 }
 
@@ -127,16 +127,20 @@ if ($cdata & 1) { //check profile
 if ($cdata & 2) { //check steamlevel
 	if ($missing[1]) {
 		$data = jcurl("https://api.steampowered.com/IPlayerService/GetBadges/v1/?key={$config['apikey']}&steamid={$_GET['steamId']}");
-		$cache['level'] = $data['response']['player_level'];
-		$badge = array_values(array_filter($data['response']['badges'], function($badge){ return !array_key_exists('appid',$badge)&&$badge['badgeid']==2; }));
-		if (count($badge)) $cache['pocbadge'] = $badge[0]['level'];
-		
-		if ($cache['oldaccount']==0 && ($vprofile & 4)==0) {
-			$badge = array_values(array_filter($data['response']['badges'], function($badge){ return !array_key_exists('appid',$badge)&&$badge['badgeid']==1; }));
-			if (count($badge) && $badge[0]['level']>0) {
-				//years of service medal has levels (aka years)
-				$cache['oldaccount']=1; //if player has this medal, they have an "old" account
-				$vprofile |= 4;
+		if (isset($data['response']['player_level'])) {
+			$cache['level'] = $data['response']['player_level'];
+		}
+		if (isset($data['response']['badges'])) {
+			$badge = array_values(array_filter($data['response']['badges'], function($badge){ return !array_key_exists('appid',$badge)&&$badge['badgeid']==2; }));
+			if (count($badge)) $cache['pocbadge'] = $badge[0]['level'];
+			
+			if ($cache['oldaccount']==0 && ($vprofile & 4)==0) {
+				$badge = array_values(array_filter($data['response']['badges'], function($badge){ return !array_key_exists('appid',$badge)&&$badge['badgeid']==1; }));
+				if (count($badge) && $badge[0]['level']>0) {
+					//years of service medal has levels (aka years)
+					$cache['oldaccount']=1; //if player has this medal, they have an "old" account
+					$vprofile |= 4;
+				}
 			}
 		}
 	}
@@ -144,12 +148,12 @@ if ($cdata & 2) { //check steamlevel
 if ($cdata & 4) { //check gametime
 	if ($missing[2]) {
 		$data = jcurl("https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key={$config['apikey']}&steamid={$_GET['steamId']}&include_played_free_games=1");
-		// if (isset($data['response']['games'])) {
+		if (isset($data['response']['games'])) {
 			$game = array_values(array_filter($data['response']['games'], function($ginfo){ return $ginfo['appid']==$_GET['appId']; }));
 			if (count($game)) {
 				$cache['gametime'] = intval($game[0]['playtime_forever']/60);
 			}
-		// }
+		}
 	}
 }
 
