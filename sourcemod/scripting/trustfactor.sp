@@ -8,7 +8,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w03a"
+#define PLUGIN_VERSION "22w03b"
 
 public Plugin myinfo = {
 	name = "Trust Factor",
