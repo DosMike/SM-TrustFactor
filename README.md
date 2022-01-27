@@ -9,7 +9,7 @@ Server moderators can also check a players trust flags with `/checktrust player`
 
 The following trust flags are possible:
 * Server Playtime (`t`)  playtime on server(network)
-* Premium (`f `) is not using a free2play account (only tf2 and csgo rn)
+* Premium (`f`) is not using a free2play account (only tf2 and csgo)
 * Donor (`d`)  player is donor / has spent money on the server
 * Profile Public (`p`)  is community profile public
 * Profile Setup (`s`)  is community profile set up
@@ -20,13 +20,27 @@ The following trust flags are possible:
 
 The TrustLevel is simply the sum of all trust flags a player has (currently max 9)
 
-Other plugins might offer you to customize the required trust flags similar to admin flag strings. These consist of the letters above and optionally a number. The number is the minimum amount of flags that have to check out of those specified. For example the value `tf1` would mean that the player would either have to be premium or donor. `tfd2` would require at least two of the three flags. No number requires all flags.
+Other plugins might offer you to customize the required trust flags similar to admin flag strings.
+The format is as follows: `RRR+TTTn`   
+For a client to be trusted to do an action, all `R` flag chars from the list above have to be set.
+Additionally the client needs all `n` flag of the optional group of `T` flag characters.
+Lastly you can use an asterisk (`*`) to mean all trust flags.
+Both sides are optional, meaning you don't have to put required or optional flags.
+
+Examples:
+* `tg+*2` requires the player to have both the configured server time and global game playtime, in addition to two more trust flags
+* `pso1` only requires one of: public profile, profile setup or not-new profile
+* `*+*9` requires all flags in the first part, the `+*9` has no effect
+* `fd` requires the player to be donor and not be free to play
+* `pf+tg` requires a public profile and non-f2p account, as well as one of the two playtime requirements
 
 Please keep in mind that depending on the setup, the TrustLevel might never exceed 2 (`td`)!
 
 ## Commands and Config
 
-The only command is `/checktrust player` that will reply with a report of known values for the specified player. This command requires the generic admin flag.
+Print a report of known values for the specified player with `/checktrust player`. This command requires the generic admin flag.
+
+Reload all players trust values with `/reload_playertrust`. This is an administrative command and requires the ban flag (same flag as `/reloadadmins`)
 
 The config is automatically generated in cfg/sourcemod/plugin.trustfactor.cfg
 
@@ -79,4 +93,7 @@ The PHP script will cache player data for 12 hours, so if a player for example b
 
 You can check players trust levels actively or by callbacks. The trust level is only available for players (not bots) and only after `OnClientTrustFactorLoaded`. You can also check that with `IsClientTrustFactorLoaded`. If a players TrustFactor changes throughout them playing, you will get `OnClientTrustFactorChanged`.
 
-It is recommended that you check trust levels with `CheckClientTrust`, but there are a few other options.
+The recommended way to check a player trust level is the following:
+* During plugin setup, create a `TrustCondition` for the action you want to require trust
+* Load it from a ConVar with `TrustCondition.Parse(value)`
+* Check a players trust for the action using `TrustCondition.Test(client)`

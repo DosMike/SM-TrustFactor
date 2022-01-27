@@ -8,7 +8,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w03b"
+#define PLUGIN_VERSION "22w04a"
 
 public Plugin myinfo = {
 	name = "Trust Factor",
@@ -32,6 +32,8 @@ enum TrustFactors (<<=1) {
 	TrustCProfileAge,      // o  profile age in months
 	TrustCProfilePoCBadge, // b  progress for pillar of community badge
 }
+#define ALLTRUSTFACTORS (view_as<TrustFactors>(0x01ff))
+
 enum struct TrustData {
 	int loaded;
 	bool isDonor;
@@ -86,6 +88,7 @@ static ConVar cvar_TrustServertime;     //required on-server playtime to count a
 static ConVar cvar_TrustPoCBadge;       //required Pillar of Community badge progress to count as trusted
 static ConVar cvar_TrustDonorFlags;     //required SourceMod AdminFlags to count as trusted
 static ConVar cvar_TrustDonorGroup;     //required SourceMod Admin Group to count as trusted
+static ConVar cvar_version;
 static GlobalForward fwdOnTrustLoaded;
 static GlobalForward fwdOnTrustChanged;
 
@@ -108,16 +111,18 @@ public void OnPluginStart() {
 	
 	gCookiePlaytime = new Cookie(COOKIE_TRUST_PLAYTIME, "Playtime as tracked for trust factor", CookieAccess_Private);
 	
-	cvar_CheckProfile =        CreateConVar("sm_trustfactor_checkprofile", "0", "Request steam profile to be checked", FCVAR_HIDDEN, true, 0.0, true, 1.0);
-	cvar_CheckSteamLevel =     CreateConVar("sm_trustfactor_checksteamlvl", "0", "Request steam community level and poc badge level to be checked", FCVAR_HIDDEN, true, 0.0, true, 1.0);
-	cvar_CheckGametime =       CreateConVar("sm_trustfactor_checkgametime", "0", "Request global gametime to be checked", FCVAR_HIDDEN, true, 0.0, true, 1.0);
-	cvar_PlayerCacheURL =      CreateConVar("sm_trustfactor_playercacheurl", "", "Specifies the steam webapi proxy, set empty to not use any profile data", FCVAR_HIDDEN|FCVAR_PROTECTED);
-	cvar_TrustCommunityLevel = CreateConVar("sm_trustfactor_minsteamlevel", "2", "Steam Community Level required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN, true, 0.0);
-	cvar_TrustGametime =       CreateConVar("sm_trustfactor_mingametime", "24", "Global game playtime [hr] required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN, true, 0.0);
-	cvar_TrustServertime =     CreateConVar("sm_trustfactor_minservertime", "300", "Playtime on server(network) [min] required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN, true, 0.0);
-	cvar_TrustPoCBadge =       CreateConVar("sm_trustfactor_minpocprogress", "1", "Pillar of Community badge level required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN, true, 0.0, true, 3.0);
-	cvar_TrustDonorFlags =     CreateConVar("sm_trustfactor_donorflag", "z", "SourceMod AdminFlag to flag Trustworthy (Donors), empty to disable", FCVAR_HIDDEN);
-	cvar_TrustDonorGroup =     CreateConVar("sm_trustfactor_donorgroup", "", "SourceMod Admin Group name to flag Trustworthy (Donors), empty to disable", FCVAR_HIDDEN);
+	cvar_version =             CreateConVar("sm_trustfactor_version", PLUGIN_VERSION, "TrustFactor Version", FCVAR_NOTIFY|FCVAR_DONTRECORD);
+	cvar_CheckProfile =        CreateConVar("sm_trustfactor_checkprofile", "0", "Request steam profile to be checked", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0, true, 1.0);
+	cvar_CheckSteamLevel =     CreateConVar("sm_trustfactor_checksteamlvl", "0", "Request steam community level and poc badge level to be checked", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0, true, 1.0);
+	cvar_CheckGametime =       CreateConVar("sm_trustfactor_checkgametime", "0", "Request global gametime to be checked", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0, true, 1.0);
+	cvar_PlayerCacheURL =      CreateConVar("sm_trustfactor_playercacheurl", "", "Specifies the steam webapi proxy, set empty to not use any profile data", FCVAR_HIDDEN|FCVAR_PROTECTED|FCVAR_UNLOGGED);
+	cvar_TrustCommunityLevel = CreateConVar("sm_trustfactor_minsteamlevel", "2", "Steam Community Level required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0);
+	cvar_TrustGametime =       CreateConVar("sm_trustfactor_mingametime", "24", "Global game playtime [hr] required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0);
+	cvar_TrustServertime =     CreateConVar("sm_trustfactor_minservertime", "300", "Playtime on server(network) [min] required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0);
+	cvar_TrustPoCBadge =       CreateConVar("sm_trustfactor_minpocprogress", "1", "Pillar of Community badge level required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0, true, 3.0);
+	cvar_TrustDonorFlags =     CreateConVar("sm_trustfactor_donorflag", "z", "SourceMod AdminFlag to flag Trustworthy (Donors), empty to disable", FCVAR_HIDDEN|FCVAR_UNLOGGED);
+	cvar_TrustDonorGroup =     CreateConVar("sm_trustfactor_donorgroup", "", "SourceMod Admin Group name to flag Trustworthy (Donors), empty to disable", FCVAR_HIDDEN|FCVAR_UNLOGGED);
+	HookAndLoadConVar(cvar_version, OnConVarChanged_locked)
 	HookAndLoadConVar(cvar_CheckProfile, OnConVarChanged_checkProfile)
 	HookAndLoadConVar(cvar_CheckSteamLevel, OnConVarChanged_checkSteamLvL)
 	HookAndLoadConVar(cvar_CheckGametime, OnConVarChanged_checkGametime)
@@ -134,19 +139,9 @@ public void OnPluginStart() {
 	fwdOnTrustChanged = new GlobalForward("OnClientTrustFactorChanged", ET_Ignore, Param_Cell, Param_Cell, Param_Cell);
 	
 	RegAdminCmd("sm_checktrust", Command_CheckTrust, ADMFLAG_GENERIC, "Read all trust values for a player");
+	RegAdminCmd("sm_reload_playertrust", Command_RecachePlayers, ADMFLAG_BAN, "Reload trust cache for players already connected");
 	
-	char steamid[MAX_STEAMID_LENGTH];
-	for (int client=1; client<=MaxClients; client++) {
-		if (!IsValidClient(client)) continue;
-		if (IsClientAuthorized(client)) {
-			GetClientAuthId(client, AuthId_SteamID64, steamid, sizeof(steamid));
-			OnClientAuthorized(client, steamid);
-			OnClientPostAdminCheck(client);
-		}
-		if (AreClientCookiesCached(client)) {
-			OnClientCookiesCached(client);
-		}
-	}
+	ReloadAllPlayers();
 }
 
 public void OnMapStart() {
@@ -246,6 +241,29 @@ public Action Command_CheckTrust(int client, int args) {
 	return Plugin_Handled;
 }
 
+public Action Command_RecachePlayers(int admin, int args) {
+	LogAction(admin, -1, "[TrustFactor] %L triggered a reload", admin);
+	ReplyToCommand(admin, "[TrustFactor] Player Caches are rebuilding...");
+	ReloadAllPlayers();
+	return Plugin_Handled;
+}
+
+static void ReloadAllPlayers() {
+	char steamid[MAX_STEAMID_LENGTH];
+	for (int client=1; client<=MaxClients; client++) {
+		if (!IsValidClient(client)) continue;
+		OnClientDisconnect(client);
+		if (IsClientAuthorized(client)) {
+			GetClientAuthId(client, AuthId_SteamID64, steamid, sizeof(steamid));
+			OnClientAuthorized(client, steamid);
+			OnClientPostAdminCheck(client);
+		}
+		if (AreClientCookiesCached(client)) {
+			OnClientCookiesCached(client);
+		}
+	}
+}
+
 
 static void EnsureClientData(int client) {
 	//already loaded, we have a steamid set
@@ -281,7 +299,7 @@ public void OnClientAuthorized(int client, const char[] auth) {
 	SetClientTrustData(client, cdata);
 	
 	char buffer[32];
-	PrintToServer("[Trustfactor] Connecting with cache at %s for %N: %s, %d, %d", playerCacheUrl, client, client_steamIds[client], steamAppId, swapi_checks);
+//	PrintToServer("[Trustfactor] Connecting with cache at %s for %N: %s, %d, %d", playerCacheUrl, client, client_steamIds[client], steamAppId, swapi_checks);
 	Handle request = SteamWorks_CreateHTTPRequest(k_EHTTPMethodGET, playerCacheUrl);
 	SteamWorks_SetHTTPRequestNetworkActivityTimeout(request, 1000);
 	SteamWorks_SetHTTPRequestUserAgentInfo(request, playerCacheUserAgent);
@@ -385,6 +403,11 @@ public void OnClientDisconnect(int client) {
 	}
 }
 
+public void OnConVarChanged_locked(ConVar convar, const char[] oldValue, const char[] newValue) {
+	char buffer[32];
+	convar.GetDefault(buffer, sizeof(buffer));
+	if (!StrEqual(buffer,newValue)) convar.RestoreDefault();
+}
 public void OnConVarChanged_checkProfile(ConVar convar, const char[] oldValue, const char[] newValue) {
 	if (convar.BoolValue)
 		swapi_checks |= SWAPI_CHECK_PROFILE;
@@ -610,8 +633,10 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("GetClientTrustFactors", Native_GetFactor);
 	CreateNative("GetClientTrustLevel", Native_GetLevel);
 	CreateNative("GetClientTrustFactorValue", Native_GetTrustValue);
-	CreateNative("ReadTrustFactorString", Native_ReadFlagString);
-	CreateNative("WriteTrustFactorString", Native_WriteFlagString);
+	CreateNative("ReadTrustFactorChars", Native_ReadFlagString);
+	CreateNative("WriteTrustFactorChars", Native_WriteFlagString);
+	CreateNative("ParseTrustConditionStringRaw", Native_ParseConditionString);
+	CreateNative("ComposeTrustConditionStringRaw", Native_ComposeConditionFlagString);
 	
 	RegPluginLibrary("trustfactor");
 }
@@ -661,21 +686,15 @@ public any Native_ReadFlagString(Handle plugin, int numParams) {
 	//read trust factor chars
 	int readtf;
 	TrustFactors factors = ParseTrustString(buf, readtf);
-	//try to read level
-	int level;
-	int readlv = StringToIntEx(buf[readtf], level);
-	if (!readlv) level=-1;
 	//write back
-	SetNativeCellRef(2, readtf+readlv);
-	SetNativeCellRef(3, level);
-	return factors;
+	SetNativeCellRef(2, factors);
+	return readtf;
 }
 public any Native_WriteFlagString(Handle plugin, int numParams) {
 	char outbuf[16]; //more than we need
 	//get args
 	TrustFactors factors = GetNativeCell(1);
 	int maxLength = GetNativeCell(3);
-	int level = GetNativeCell(4);
 	//validate args
 	int written;
 	if (maxLength<=0) return 0;
@@ -685,15 +704,120 @@ public any Native_WriteFlagString(Handle plugin, int numParams) {
 	}
 	//write chars
 	TrustFactorString(factors, outbuf, sizeof(outbuf));
-	//validate level
-	int maxlevel;
-	for (int temp=view_as<int>(factors); temp; temp>>=1) if (temp&1) maxlevel++;
-	if (level>=maxlevel) level = -1;
-	//write level
-	if (level>=0) {
-		Format(outbuf, sizeof(outbuf), "%s%i", outbuf, level);
-	}
 	//write out
 	SetNativeString(2, outbuf, maxLength, _, written);
+	return written;
+}
+public any Native_ParseConditionString(Handle plugin, int numParams) {
+	// the format is loosly \w+(\+\w+)?[0-9]*
+	//  \w+ -> required
+	//  \w+\+\w+ -> required, optional as required
+	//  \w+[0-9]* -> n optionals, no required
+	//  \w+\+\w+[0-9]* -> required, n optionals
+	//get string
+	int len;
+	GetNativeStringLength(1, len);
+	char[] buf = new char[len+1];
+	GetNativeString(1,buf,len+1);
+	//read trust factor chars
+	int read, tmp, ocount;
+	bool readOptionals;
+	TrustFactors reqflags, optflags;
+	
+	if (buf[0] != 0) { //shortcut for empty string
+		if (buf[0]=='*') {
+			reqflags = ALLTRUSTFACTORS;
+			read = 1;
+		} else {
+			reqflags = ParseTrustString(buf, read);
+		}
+		//is the next char a plus? then the parsed chars are required
+		if (buf[read]=='+') {
+			read += 1;
+			if (buf[read]=='*') {
+				optflags = ALLTRUSTFACTORS;
+				read += 1;
+			} else {
+				optflags = ParseTrustString(buf[read], tmp);
+				read += tmp;
+			}
+			readOptionals = true;
+		}
+		//try to find a numeric suffix aka optional count
+		// on a hit, if no +O string was read yet, this means there's no R string, and the assumed R is O
+		tmp = StringToIntEx(buf[read], ocount);
+		read += tmp;
+		if (tmp) {
+			// ocount 0 means no optionals are required, ignore them
+			if (ocount == 0) {
+				optflags = UNTRUSTED;
+			} else if (ocount < 0) { //-1 => require all optionals. equal to mixing R=R|O and not using optionals
+				reqflags |= optflags;
+				ocount = 0;
+			} else if (!readOptionals) { //the assumed R string is an O string, remap
+				optflags = reqflags;
+				reqflags = UNTRUSTED;
+			}
+			//otherwise the O string now has a count of ocount
+		}
+		if (!tmp && readOptionals) { //optionals have no count, treat requires by logic oring
+			reqflags |= optflags;
+			optflags = UNTRUSTED;
+		}
+	}
+	//create trustcondition "struct"
+	any data[3];
+	data[0] = reqflags;
+	data[1] = optflags;
+	data[2] = ocount;
+	//write back
+	SetNativeArray(2, data, 3);
+	return read;
+}
+public any Native_ComposeConditionFlagString(Handle plugin, int numParams) {
+	char buffer[32];
+	any data[3];
+	GetNativeArray(1, data, 3);
+	int maxlen = GetNativeCell(3);
+	
+	//prepare components from trust condition
+	char tmp[2][16];
+	bool reqs,opts;
+	if (data[0]!=UNTRUSTED) {
+		if ((data[0]&ALLTRUSTFACTORS)==ALLTRUSTFACTORS) tmp[0][0]='*';
+		else TrustFactorString(data[0], tmp[0], sizeof(tmp[]));
+		reqs = true;
+	}
+	if (data[1]!=UNTRUSTED) {
+		if ((data[1]&ALLTRUSTFACTORS)==ALLTRUSTFACTORS) tmp[1][0]='*';
+		else TrustFactorString(data[1], tmp[1], sizeof(tmp[]));
+		opts = true;
+	}
+	int optc = data[2];
+	
+	//preprocess output
+	int max;
+	for (int temp=view_as<int>(data[1]); temp; temp>>=1) if (temp&1) max++;
+	if (optc >= max || optc < -1) {
+		//all optionals are required
+		reqs |= opts;
+		optc = -1;
+	}
+	if (optc == 0) opts=false; //no optionals are required -> skip optionals
+	
+	//build string
+	int written;
+	if (!reqs && !opts) {
+		//untrusted is ok
+		if (maxlen>0) SetNativeString(2, "", maxlen, _, written);
+	} else if (!opts) { //only required
+		if (maxlen>0) SetNativeString(2, tmp[0], maxlen, _, written);
+	} else if (!reqs) { //only optional
+		FormatEx(buffer, sizeof(buffer), "%s%d", tmp[1], optc);
+		if (maxlen>0) SetNativeString(2, buffer, maxlen, _, written);
+	} else {
+		FormatEx(buffer, sizeof(buffer), "%s+%s%d", tmp[0], tmp[1], optc);
+		if (maxlen>0) SetNativeString(2, buffer, maxlen, _, written);
+	}
 	return written;
 }
