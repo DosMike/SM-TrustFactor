@@ -32,7 +32,7 @@ Examples:
 * `pso1` only requires one of: public profile, profile setup or not-new profile
 * `*+*9` requires all flags in the first part, the `+*9` has no effect
 * `fd` requires the player to be donor and not be free to play
-* `pf+tg` requires a public profile and non-f2p account, as well as one of the two playtime requirements
+* `pf+tg1` requires a public profile and non-f2p account, as well as one of the two playtime requirements
 
 Please keep in mind that depending on the setup, the TrustLevel might never exceed 2 (`td`)!
 
