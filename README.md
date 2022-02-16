@@ -17,8 +17,8 @@ The following trust flags are possible:
 * Profile Gametime (`g`)  total playtime for the game
 * Profile Age (`o`)  it is not a new account
 * Profile PoCBadge (`b`)  level for pillar of community badge
-* Vac Bans (`v`)  has/had VAC bans on record
-* Economy/Trade Banned (`e`)  is currently banned from trading
+* Vac Bans (`v`)  has/had no VAC bans on record
+* Economy/Trade Banned (`e`)  is currently not banned from trading
 
 The TrustLevel is simply the sum of all trust flags a player has (currently max 11)
 
