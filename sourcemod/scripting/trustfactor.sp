@@ -8,7 +8,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w04a"
+#define PLUGIN_VERSION "22w07a"
 
 public Plugin myinfo = {
 	name = "Trust Factor",
@@ -31,8 +31,12 @@ enum TrustFactors (<<=1) {
 	TrustCProfileGametime, // g  total playtime for the game
 	TrustCProfileAge,      // o  profile age in months
 	TrustCProfilePoCBadge, // b  progress for pillar of community badge
+	TrustNoVACBans,        // v  no active or passed VAC banns
+	TrustNotEconomyBanned, // e  not currently trade/economy banned
+	TrustSBPPGameBan,      // a  RESERVED has little to no sb game bans
+	TrustSBPPCommBan,      // c  RESERVED has little to no sb comm bans
 }
-#define ALLTRUSTFACTORS (view_as<TrustFactors>(0x01ff))
+#define ALLTRUSTFACTORS (view_as<TrustFactors>(0x0fff))
 
 enum struct TrustData {
 	int loaded;
@@ -45,6 +49,8 @@ enum struct TrustData {
 	int gametime;
 	int profileAge;
 	int badgeLevel;
+	bool vacBanned; //has vac bans on record (might decay after 6 years)
+	bool tradeBanned; //is trade/economy banned
 	TrustFactors trustFlags;
 	int trustLevel;
 }
@@ -65,6 +71,7 @@ static Cookie gCookiePlaytime = null;
 #define SWAPI_CHECK_PROFILE 1
 #define SWAPI_CHECK_STEAMLVL 2
 #define SWAPI_CHECK_GAMETIME 4
+#define SWAPI_CHECK_BANS 8
 
 static int steamAppId, steamDlcId; //for game and premium dlc
 static char engineMeta[2][32];
@@ -80,6 +87,7 @@ static char trust_donorgroup[MAX_NAME_LENGTH]; //OverrideGroup for donor permiss
 static ConVar cvar_CheckProfile;    //check ISteamUser/GetPlayerSummaries for communityvisibilitystate==3, profilestate==1, timecreated
 static ConVar cvar_CheckSteamLevel; //check IPlayerService/GetBadges for community level & poc level
 static ConVar cvar_CheckGametime;   //check IPlayerService/GetOwnedGames for poc badge progress
+static ConVar cvar_CheckBans;   //check IPlayerService/GetOwnedGames for poc badge progress
 //maybe add this at some point : ISteamUser/GetPlayerBans
 static ConVar cvar_PlayerCacheURL;      //cache php script url
 static ConVar cvar_TrustCommunityLevel; //required community level to count as trusted
@@ -115,6 +123,7 @@ public void OnPluginStart() {
 	cvar_CheckProfile =        CreateConVar("sm_trustfactor_checkprofile", "0", "Request steam profile to be checked", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0, true, 1.0);
 	cvar_CheckSteamLevel =     CreateConVar("sm_trustfactor_checksteamlvl", "0", "Request steam community level and poc badge level to be checked", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0, true, 1.0);
 	cvar_CheckGametime =       CreateConVar("sm_trustfactor_checkgametime", "0", "Request global gametime to be checked", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0, true, 1.0);
+	cvar_CheckBans =           CreateConVar("sm_trustfactor_checkbans", "0", "Request vac and trade ban data to be checked", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0, true, 1.0);
 	cvar_PlayerCacheURL =      CreateConVar("sm_trustfactor_playercacheurl", "", "Specifies the steam webapi proxy, set empty to not use any profile data", FCVAR_HIDDEN|FCVAR_PROTECTED|FCVAR_UNLOGGED);
 	cvar_TrustCommunityLevel = CreateConVar("sm_trustfactor_minsteamlevel", "2", "Steam Community Level required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0);
 	cvar_TrustGametime =       CreateConVar("sm_trustfactor_mingametime", "24", "Global game playtime [hr] required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0);
@@ -126,6 +135,7 @@ public void OnPluginStart() {
 	HookAndLoadConVar(cvar_CheckProfile, OnConVarChanged_checkProfile)
 	HookAndLoadConVar(cvar_CheckSteamLevel, OnConVarChanged_checkSteamLvL)
 	HookAndLoadConVar(cvar_CheckGametime, OnConVarChanged_checkGametime)
+	HookAndLoadConVar(cvar_CheckBans, OnConVarChanged_checkBans)
 	HookAndLoadConVar(cvar_PlayerCacheURL, OnConVarChanged_playerCacheURL)
 	HookAndLoadConVar(cvar_TrustCommunityLevel, OnConVarChanged_trustCommunityLevel)
 	HookAndLoadConVar(cvar_TrustGametime, OnConVarChanged_trustGametime)
@@ -235,7 +245,16 @@ public Action Command_CheckTrust(int client, int args) {
 				condition = cdata.badgeLevel >= trust_pocbadge;
 				CReplyToCommand(client, "  Community Badge: {%s}%d/%d", colors[condition?0:2], cdata.badgeLevel, trust_pocbadge);
 			}
-			CReplyToCommand(client, "  {gold}Trust Level: %d/9", cdata.trustLevel);
+			
+			condition = cdata.vacBanned;
+			a = (swapi_checks & SWAPI_CHECK_BANS) ? (condition?2:0) : 1;
+			CReplyToCommand(client, "  VAC Bans on Record: {%s}%s", colors[a], ynstr[condition?0:1]);
+			
+			condition = cdata.tradeBanned;
+			a = (swapi_checks & SWAPI_CHECK_BANS) ? (condition?2:0) : 1;
+			CReplyToCommand(client, "  Trade Banned: {%s}%s", colors[a], ynstr[condition?0:1]);
+			
+			CReplyToCommand(client, "  {gold}Trust Level: %d/11", cdata.trustLevel);
 		}
 	}
 	return Plugin_Handled;
@@ -373,7 +392,7 @@ public void OnProfileDataCached(Handle handle, bool failed, bool successfull, EH
 	} else {
 		int contentLength;
 		if (SteamWorks_GetHTTPResponseBodySize(handle, contentLength)) {
-			char[] buffer = new char[contentLength+1];
+			char buffer[128];
 			SteamWorks_GetHTTPResponseBodyData(handle, buffer, contentLength);
 			
 			int version = SubStrToInt(buffer,0,2);
@@ -385,6 +404,17 @@ public void OnProfileDataCached(Handle handle, bool failed, bool successfull, EH
 				cdata.badgeLevel =    (flags & 0xf0) >> 4;
 				cdata.communityLevel = SubStrToInt(buffer,4,4);
 				cdata.gametime = SubStrToInt(buffer,8,8);
+				cdata.vacBanned = cdata.tradeBanned = false; //no data
+			} else if (version == 2 && contentLength >= 18) {
+				int flags = SubStrToInt(buffer,2,2);
+				cdata.profileSetup =  (flags & 0x01) != 0;
+				cdata.profilePublic = (flags & 0x02) != 0;
+				cdata.profileAge =    (flags & 0x04) != 0;
+				cdata.vacBanned =     (flags & 0x08) != 0;
+				cdata.tradeBanned =   (flags & 0x10) != 0;
+				cdata.badgeLevel =    SubStrToInt(buffer,4,2);
+				cdata.communityLevel = SubStrToInt(buffer,6,4);
+				cdata.gametime = SubStrToInt(buffer,10,8);
 			} else {
 				PrintToServer("[TrustFactor] Proxy response version not supported");
 			}
@@ -427,6 +457,13 @@ public void OnConVarChanged_checkGametime(ConVar convar, const char[] oldValue, 
 		swapi_checks |= SWAPI_CHECK_GAMETIME;
 	else
 		swapi_checks &=~SWAPI_CHECK_GAMETIME;
+	UpdateTrustfactorAll();
+}
+public void OnConVarChanged_checkBans(ConVar convar, const char[] oldValue, const char[] newValue) {
+	if (convar.BoolValue)
+		swapi_checks |= SWAPI_CHECK_BANS;
+	else
+		swapi_checks &=~SWAPI_CHECK_BANS;
 	UpdateTrustfactorAll();
 }
 public void OnConVarChanged_playerCacheURL(ConVar convar, const char[] oldValue, const char[] newValue) {
@@ -507,6 +544,8 @@ static void UpdateTrustfactor(int client, bool broadcast=true) {
 	if (cdata.profilePublic) { cdata.trustFlags |= TrustCProfilePublic; cdata.trustLevel++; }
 	if (cdata.badgeLevel > trust_pocbadge) { cdata.trustFlags |= TrustCProfilePoCBadge; cdata.trustLevel++; }
 	if (cdata.communityLevel > trust_communityLevel) { cdata.trustFlags |= TrustCProfileLevel; cdata.trustLevel++; }
+	if (!cdata.vacBanned) { cdata.trustFlags |= TrustNoVACBans; cdata.trustLevel++; }
+	if (!cdata.tradeBanned) { cdata.trustFlags |= TrustNotEconomyBanned; cdata.trustLevel++; }
 	if (cdata.isDonor) { cdata.trustFlags |= TrustDonorFlag; cdata.trustLevel++; }
 	SetClientTrustData(client, cdata);
 	if (broadcast && (previousFlags != cdata.trustFlags || previousLevel != cdata.trustLevel)) {
@@ -581,6 +620,8 @@ static TrustFactors ParseTrustString(const char[] string, int& read) {
 			case 'g': ret |= TrustCProfileGametime;
 			case 'o': ret |= TrustCProfileAge;
 			case 'b': ret |= TrustCProfilePoCBadge;
+			case 'v': ret |= TrustNoVACBans;
+			case 'e': ret |= TrustNotEconomyBanned;
 			default: break; //breaks for
 		}
 	}
@@ -603,6 +644,8 @@ static int TrustFactorString(TrustFactors flags, char[] buffer, int maxLength) {
 				case TrustCProfileGametime: fchar = 'g';
 				case TrustCProfileAge: fchar = 'o';
 				case TrustCProfilePoCBadge: fchar = 'b';
+				case TrustNoVACBans: fchar = 'v';
+				case TrustNotEconomyBanned: fchar = 'e';
 				default: fchar = 0;
 			}
 			if (fchar) {
@@ -673,6 +716,8 @@ public any Native_GetTrustValue(Handle plugin, int numParams) {
 		case TrustCProfileGametime: return data.gametime;
 		case TrustCProfileAge: return data.profileAge;
 		case TrustCProfilePoCBadge: return data.badgeLevel;
+		case TrustNoVACBans: return data.vacBanned;
+		case TrustNotEconomyBanned: return data.tradeBanned;
 		default: ThrowNativeError(SP_ERROR_PARAM, "Specified number of trust factors != 1");
 	}
 	return 0;

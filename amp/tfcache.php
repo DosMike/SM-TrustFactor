@@ -1,4 +1,5 @@
 <?php
+// you can delete the following two lines about errors once everything works
 error_reporting(E_ALL);
 ini_set("display_errors", 1);
 
@@ -12,6 +13,12 @@ $config = [
 	'host'     => 'localhost'
 ];
 
+// connecting first, so you can check whether it works (should return 'Format' if database is reachable)
+$sql = new mysqli($config['host'], $config['username'], $config['password'], $config['database']);
+if ($sql->connect_errno) {
+	fail($sql->connect_error);
+}
+
 function cget($var) {
 	return array_key_exists($var, $_GET) && !empty(trim($_GET[$var])) && is_numeric($_GET[$var]);
 }
@@ -20,12 +27,6 @@ $headers = apache_request_headers();
 if (empty($headers['X-Trustfactor']) || !cget('steamId') || !cget('appId') || !cget('cdata')) {
 	cancel("Format");
 }
-
-$sql = new mysqli($config['host'], $config['username'], $config['password'], $config['database']);
-if ($sql->connect_errno) {
-	fail($sql->connect_error);
-}
-
 // set charset
 $sql->set_charset('utf8mb4');
 if ($sql->errno) {
@@ -41,6 +42,8 @@ $sql->query(
 	accountage tinyint,
 	level int,
 	pocbadge tinyint,
+	vacbanned tinyint,
+	tradebanned tinyint,
 	created timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 )"
 );
@@ -75,12 +78,14 @@ $cache = [
 	'oldaccount'=>0,
 	'level'=>0,
 	'pocbadge'=>0,
-	'gametime'=>0
+	'gametime'=>0,
+	'vacbanned'=>0,
+	'tradebanned'=>0,
 ];
-$missing = [ false, false, false ];
+$missing = [ false, false, false, false ]; //request types (SWAPI_CHECK_*)
 //try to load data from cache
 $result = $sql->query(
-"SELECT smtfc_player.`setup`, smtfc_player.`visibility`, smtfc_player.`accountage`, smtfc_player.`level`, smtfc_player.`pocbadge`, smtfc_gametime.`gametime`
+"SELECT smtfc_player.`setup`, smtfc_player.`visibility`, smtfc_player.`accountage`, smtfc_player.`level`, smtfc_player.`pocbadge`, smtfc_player.`vacbanned`, smtfc_player.`tradebanned`, smtfc_gametime.`gametime`
 FROM smtfc_player
 LEFT JOIN smtfc_gametime ON smtfc_player.`steamId` = smtfc_gametime.`playerId` AND smtfc_gametime.`appId` = '".mysqli_real_escape_string($sql, $_GET['appId'])."'
 WHERE smtfc_player.`steamId` = '".mysqli_real_escape_string($sql, $_GET['steamId'])."'"
@@ -104,12 +109,18 @@ if (($row=$result->fetch_assoc())!==NULL) {
 	} else {
 		$cache['gametime'] = $row['gametime'];
 	}
+	if ($row['vacbanned']===NULL || $row['tradebanned']===NULL) {
+		$missing[3] = true;
+	} else {
+		$cache['vacbanned'] = $row['vacbanned'];
+		$cache['tradebanned'] = $row['tradebanned'];
+	}
 } else {
-	$missing = [ true, true, true ];
+	$missing = [ true, true, true, true ];
 }
 
 //load data we are allowed to postload
-$vprofile = 0;
+$vprofile = 0; //bits parsed in order by the plugin
 $cdata = intval($_GET['cdata']);
 if ($cdata & 1) { //check profile
 	if ($missing[0]) {
@@ -156,22 +167,38 @@ if ($cdata & 4) { //check gametime
 		}
 	}
 }
+if ($cdata & 8) { //check banns
+	if ($missing[3]) {
+		$data = jcurl("https://api.steampowered.com/ISteamUser/GetPlayerBans/v1/?key={$config['apikey']}&steamids={$_GET['steamId']}");
+		if (isset($data['players']) && count($data['players'])==1) {
+			$bans = $data['players'][0];
+			$cache['vacbanned'] = $bans['VACBanned'] || $bans['NumberOfVACBans']>0;
+			$cache['tradebanned'] = $bans['EconomyBan']!=='none'; //doesn't seem to be documented? observed values: 'none', 'banned'
+		}
+	}
+	if ($cache['vacbanned']) $vprofile |= 8;
+	if ($cache['tradebanned']) $vprofile |= 16;
+}
 
 if (($cdata) && ($missing[0]||$missing[1]||$missing[2])) { //we need to ensure this row exists, even in only gametime was choosen
 	$sql->query(
-		"INSERT INTO smtfc_player (`steamId`,`setup`,`visibility`,`accountage`,`level`,`pocbadge`) VALUES ('".
+		"INSERT INTO smtfc_player (`steamId`,`setup`,`visibility`,`accountage`,`level`,`pocbadge`,`vacbanned`,`tradebanned`) VALUES ('".
 			mysqli_real_escape_string($sql, $_GET['steamId'])."', '".
 			intval($cache['setup'])."', '".
 			intval($cache['visibility'])."', '".
 			intval($cache['oldaccount'])."', '".
 			intval($cache['level'])."', '".
-			intval($cache['pocbadge'])
+			intval($cache['pocbadge'])."', '".
+			intval($cache['vacbanned'])."', '".
+			intval($cache['tradebanned'])
 		."') ON DUPLICATE KEY UPDATE ".
 			"`setup`='".intval($cache['setup']).
 			"',`visibility`='".intval($cache['visibility']).
 			"',`accountage`='".intval($cache['oldaccount']).
 			"',`level`='".intval($cache['level']).
-			"',`pocbadge`='".intval($cache['pocbadge'])."'"
+			"',`pocbadge`='".intval($cache['pocbadge']).
+			"',`vacbanned`='".intval($cache['vacbanned']).
+			"',`tradebanned`='".intval($cache['tradebanned'])."'"
 	);
 }
 if (($cdata & 8) && $missing[2]) { //we have updated game data
@@ -185,7 +212,7 @@ if (($cdata & 8) && $missing[2]) { //we have updated game data
 	);
 }
 
-printf("01%X%X%04X%08X", $cache['pocbadge'], $vprofile, $cache['level'], $cache['gametime']);
+printf("02%02X%02X%04X%08X", $vprofile&0xFF, $cache['pocbadge']&0xFF, $cache['level'], $cache['gametime']);
 
 // $ru = getrusage();
 // echo "<br>This process used " . rutime($ru, $rustart, "utime") . " ms for its computations\n";
@@ -198,6 +225,7 @@ printf("01%X%X%04X%08X", $cache['pocbadge'], $vprofile, $cache['level'], $cache[
 function jcurl($at) {
 	$ch = curl_init();
 	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+	curl_setopt($ch, CURLOPT_USERAGENT, 'TrustFactor/2 (github.com/DosMike/SM-TrustFactor; SourceMod plugin adapter) PHP/'.PHP_VERSION);
 	curl_setopt($ch, CURLOPT_URL, $at);
 	$result = curl_exec($ch);
 	curl_close($ch);

@@ -14,6 +14,10 @@ enum TrustFactors (<<=1) {
 	TrustCProfileGametime, //total playtime for the game
 	TrustCProfileAge,      //profile age in months
 	TrustCProfilePoCBadge, //progress for pillar of community badge
+	TrustNoVACBans,        //no active or passed VAC banns
+	TrustNotEconomyBanned, //not currently trade/economy banned
+	TrustSBPPGameBan,      //RESERVED has little to no sb game bans
+	TrustSBPPCommBan,      //RESERVED has little to no sb comm bans
 }
 
 /**
@@ -92,6 +96,8 @@ native int GetClientTrustFactorValue(int client, TrustFactors factor);
  * - g TrustCProfileGametime
  * - o TrustCProfileAge
  * - b TrustCProfilePoCBadge
+ * - v TrustNoVACBans
+ * - e TrustNotEconomyBanned
  * 
  * @param flagstring - the flag string to parse
  * @param TrustFactors - the parsed value
@@ -144,6 +150,8 @@ native int WriteTrustFactorChars(TrustFactors factors, char[] flagstring, int ma
  * - g TrustCProfileGametime
  * - o TrustCProfileAge
  * - b TrustCProfilePoCBadge
+ * - v TrustNoVACBans
+ * - e TrustNotEconomyBanned
  * 
  * @param conditionString - the string to parse
  * @param condition - array with [required:TrustFactors, optional:TrustFactors, optionalCount:int]
@@ -254,6 +262,8 @@ enum struct TrustCondition {
 	 * - g TrustCProfileGametime
 	 * - o TrustCProfileAge
 	 * - b TrustCProfilePoCBadge
+	 * - v TrustNoVACBans
+	 * - e TrustNotEconomyBanned
 	 * - * Is a meta char, meaning all flags
 	 * 
 	 * @param conditionString - the string to parse

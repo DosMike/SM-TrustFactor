@@ -17,8 +17,10 @@ The following trust flags are possible:
 * Profile Gametime (`g`)  total playtime for the game
 * Profile Age (`o`)  it is not a new account
 * Profile PoCBadge (`b`)  level for pillar of community badge
+* Vac Bans (`v`)  has/had VAC bans on record
+* Economy/Trade Banned (`e`)  is currently banned from trading
 
-The TrustLevel is simply the sum of all trust flags a player has (currently max 9)
+The TrustLevel is simply the sum of all trust flags a player has (currently max 11)
 
 Other plugins might offer you to customize the required trust flags similar to admin flag strings.
 The format is as follows: `RRR+TTTn`   
@@ -30,7 +32,7 @@ Both sides are optional, meaning you don't have to put required or optional flag
 Examples:
 * `tg+*2` requires the player to have both the configured server time and global game playtime, in addition to two more trust flags
 * `pso1` only requires one of: public profile, profile setup or not-new profile
-* `*+*9` requires all flags in the first part, the `+*9` has no effect
+* `*+*11` requires all flags in the first part, the `+*11` has no effect
 * `fd` requires the player to be donor and not be free to play
 * `pf+tg1` requires a public profile and non-f2p account, as well as one of the two playtime requirements
 
@@ -80,6 +82,7 @@ sm_trustfactor_playercacheurl "https://myserver.net/pathto/tfcache.php"
 sm_trustfactor_checkgametime "1" // -> will fetch account's game playtime
 sm_trustfactor_checkprofile "1" // -> will fetch profile public, profile set up, fresh account
 sm_trustfactor_checksteamlvl "1" // -> will fetch community level, badge level
+sm_trustfactor_checkbans "1" // -> will fetch vac and economy ban status
 ```
 
 The PHP script will cache player data for 12 hours, so if a player for example barely does not have enough game time, they will have to wait another 12 hours before that value is checked again. If certain checks are not enabled, the associated trust factors will appear as failed to the plugin. This is done also, so you're not exhausting your 100000 request/day limit any time soon.

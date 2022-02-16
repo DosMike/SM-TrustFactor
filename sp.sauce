@@ -1,0 +1,10 @@
+sourcemod 1.10
+auth github ${spsgitpat}
+
+dependency github KyleSanderson/SteamWorks latest package-lin.tgz
+
+# careful, the version i downloaded has a bug where replying to console prints doubly
+# i was too lazy to PR a fix, sorry about that
+dependency github Bara/Multi-Colors master-SNAPSHOT
+
+spcomp sourcemod/scripting/trustfactor.sp -O2 -otrustfactor.smx
