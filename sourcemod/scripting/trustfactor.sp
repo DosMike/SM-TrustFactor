@@ -8,7 +8,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w07a"
+#define PLUGIN_VERSION "22w08a"
 
 public Plugin myinfo = {
 	name = "Trust Factor",
@@ -51,13 +51,16 @@ enum struct TrustData {
 	int badgeLevel;
 	bool vacBanned; //has vac bans on record (might decay after 6 years)
 	bool tradeBanned; //is trade/economy banned
+	int sbppGameBans;
+	int sbppCommBans;
 	TrustFactors trustFlags;
 	int trustLevel;
 }
 #define LOADED_LOCALDATA 0x01
 #define LOADED_PREMIUM 0x02
 #define LOADED_PROFILEDATA 0x04
-#define LOADED_ALL 0x07
+#define LOADED_SOURCEBANS 0x08
+#define LOADED_ALL 0x0F
 #define COOKIE_TRUST_PLAYTIME "TrustPlayTime"
 
 #define GetClientTrustData(%1,%2) client_trustData.GetArray(client_steamIds[(%1)], (%2), sizeof(TrustData))
@@ -101,6 +104,8 @@ static GlobalForward fwdOnTrustLoaded;
 static GlobalForward fwdOnTrustChanged;
 
 public void OnPluginStart() {
+	
+	LoadTranslations("common.phrases");
 	
 	GameData gamedata = new GameData("trustfactor.games");
 	if (gamedata != INVALID_HANDLE) {
@@ -190,6 +195,7 @@ public Action Command_CheckTrust(int client, int args) {
 		int hits = ProcessTargetString(buffer, client, players, 1, COMMAND_FILTER_NO_BOTS|COMMAND_FILTER_NO_MULTI|COMMAND_FILTER_NO_IMMUNITY, buffer2, 0, tnisml);
 		if (hits != 1) {
 			ReplyToTargetError(client, hits);
+			return Plugin_Handled;
 		}
 		CReplyToCommand(client, "{gray}Trust Data for{dodgerblue} %N", players[0]);
 		TrustData cdata;
@@ -283,6 +289,7 @@ static void ReloadAllPlayers() {
 	}
 }
 
+// -- generic flag collection --
 
 static void EnsureClientData(int client) {
 	//already loaded, we have a steamid set
@@ -302,39 +309,22 @@ static void EnsureClientData(int client) {
 
 public void OnClientAuthorized(int client, const char[] auth) {
 	EnsureClientData(client);
+	if (!IsValidClient(client)) return;
 	
 	TrustData cdata;
 	GetClientTrustData(client, cdata);
 	if (steamDlcId) cdata.premium = SteamWorks_HasLicenseForApp(client, steamDlcId) == k_EUserHasLicenseResultHasLicense;
 	cdata.loaded |= LOADED_PREMIUM;
-	
-	//manually "finish" profile data if web disabled
-	if (playerCacheUrl[0]==0 || swapi_checks==0) {
-		cdata.loaded |= LOADED_PROFILEDATA;
-		SetClientTrustData(client, cdata);
-		if (cdata.loaded == LOADED_ALL) UpdateTrustfactor(client);
-		return;
-	}
 	SetClientTrustData(client, cdata);
+	//can' be done loading here yet
 	
-	char buffer[32];
-//	PrintToServer("[Trustfactor] Connecting with cache at %s for %N: %s, %d, %d", playerCacheUrl, client, client_steamIds[client], steamAppId, swapi_checks);
-	Handle request = SteamWorks_CreateHTTPRequest(k_EHTTPMethodGET, playerCacheUrl);
-	SteamWorks_SetHTTPRequestNetworkActivityTimeout(request, 1000);
-	SteamWorks_SetHTTPRequestUserAgentInfo(request, playerCacheUserAgent);
-	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "steamId", client_steamIds[client]);
-	Format(buffer, sizeof(buffer), "%i", steamAppId);
-	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "appId", buffer);
-	Format(buffer, sizeof(buffer), "%i", swapi_checks);
-	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "cdata", buffer);
-	SteamWorks_SetHTTPRequestHeaderValue(request, "X-Trustfactor", PLUGIN_VERSION);
-	SteamWorks_SetHTTPRequestContextValue(request, GetClientUserId(client));
-	SteamWorks_SetHTTPCallbacks(request, OnProfileDataCached);
-	SteamWorks_SendHTTPRequest(request);
+	SourceBansQueryClient(client, auth);
+	SteamWorksQueryClient(client);
 }
 
 
 public void OnClientPostAdminCheck(int client) {
+	if (!IsValidClient(client)) return;
 	TrustData cdata;
 	GetClientTrustData(client, cdata);
 	cdata.isDonor = CheckClientAdminFlags(client);
@@ -358,8 +348,16 @@ static void ReloadAdminFlags() {
 	}
 }
 
+public void OnClientDisconnect(int client) {
+	if (client_steamIds[client][0]!=0) {
+		client_trustData.Remove(client_steamIds[client]);
+		client_steamIds[client][0]=0;
+	}
+}
+
 public void OnClientCookiesCached(int client) {
 	EnsureClientData(client);
+	if (!IsValidClient(client)) return;
 	
 	TrustData cdata;
 	char buffer[32];
@@ -376,9 +374,38 @@ public void OnClientCookiesCached(int client) {
 	if (loadingDone) Notify_OnTrustFactorLoaded(client);
 }
 
+// -- steamworks api query --
+
+static void SteamWorksQueryClient(int client) {
+	//manually "finish" profile data if web disabled
+	if (playerCacheUrl[0]==0 || swapi_checks==0) {
+		TrustData cdata;
+		GetClientTrustData(client, cdata);
+		cdata.loaded |= LOADED_PROFILEDATA;
+		SetClientTrustData(client, cdata);
+		if (cdata.loaded == LOADED_ALL) UpdateTrustfactor(client);
+		return;
+	}
+	
+	char buffer[32];
+//	PrintToServer("[Trustfactor] Connecting with cache at %s for %N: %s, %d, %d", playerCacheUrl, client, client_steamIds[client], steamAppId, swapi_checks);
+	Handle request = SteamWorks_CreateHTTPRequest(k_EHTTPMethodGET, playerCacheUrl);
+	SteamWorks_SetHTTPRequestNetworkActivityTimeout(request, 1000);
+	SteamWorks_SetHTTPRequestUserAgentInfo(request, playerCacheUserAgent);
+	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "steamId", client_steamIds[client]);
+	Format(buffer, sizeof(buffer), "%i", steamAppId);
+	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "appId", buffer);
+	Format(buffer, sizeof(buffer), "%i", swapi_checks);
+	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "cdata", buffer);
+	SteamWorks_SetHTTPRequestHeaderValue(request, "X-Trustfactor", PLUGIN_VERSION);
+	SteamWorks_SetHTTPRequestContextValue(request, GetClientUserId(client));
+	SteamWorks_SetHTTPCallbacks(request, OnProfileDataCached);
+	SteamWorks_SendHTTPRequest(request);
+}
+
 public void OnProfileDataCached(Handle handle, bool failed, bool successfull, EHTTPStatusCode statusCode, int userId) {
 	int client = GetClientOfUserId(userId);
-	if (client==0) {
+	if (!IsValidClient(client)) {
 		//client disconnected, we don't care anymore
 		delete handle;
 		return; 
@@ -426,12 +453,19 @@ public void OnProfileDataCached(Handle handle, bool failed, bool successfull, EH
 	if (loadingDone) Notify_OnTrustFactorLoaded(client);
 }
 
-public void OnClientDisconnect(int client) {
-	if (client_steamIds[client][0]!=0) {
-		client_trustData.Remove(client_steamIds[client]);
-		client_steamIds[client][0]=0;
-	}
+// -- sourcebans --
+
+public bool SourceBansQueryClient(int client, const char[] steam2) {
+	if (!IsValidClient(client)) return;
+	TrustData cdata;
+	GetClientTrustData(client, cdata);
+	cdata.loaded |= LOADED_SOURCEBANS; //pretend we're done
+	SetClientTrustData(client, cdata);
+	if (cdata.loaded == LOADED_ALL) UpdateTrustfactor(client);
+	return;
 }
+
+// -- convars & notifier --
 
 public void OnConVarChanged_locked(ConVar convar, const char[] oldValue, const char[] newValue) {
 	char buffer[32];
@@ -511,6 +545,8 @@ static void Notify_OnTrustFactorLoaded(int client) {
 	Call_Finish();
 }
 
+// -- utils --
+
 static bool _updateTrustfactorAllIndirect=false;
 /**
  * @param indirect - skip all further indirect calls until a scheduled call on the next frame has processed
@@ -523,7 +559,8 @@ static void UpdateTrustfactorAll(bool indirect=true) {
 	} else {
 		_updateTrustfactorAllIndirect = false;
 		for (int client=1;client<=MaxClients;client++) {
-			UpdateTrustfactor(client);
+			if (IsValidClient(client))
+				UpdateTrustfactor(client);
 		}
 	}
 }
@@ -670,6 +707,8 @@ static bool CheckClientAdminFlags(int client) {
 	}
 	return false;
 }
+
+// -- natives --
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max) {
 	CreateNative("IsClientTrustFactorLoaded", Native_IsLoaded);
