@@ -8,7 +8,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w08a"
+#define PLUGIN_VERSION "22w10a"
 
 public Plugin myinfo = {
 	name = "Trust Factor",
@@ -468,9 +468,8 @@ public bool SourceBansQueryClient(int client, const char[] steam2) {
 // -- convars & notifier --
 
 public void OnConVarChanged_locked(ConVar convar, const char[] oldValue, const char[] newValue) {
-	char buffer[32];
-	convar.GetDefault(buffer, sizeof(buffer));
-	if (!StrEqual(buffer,newValue)) convar.RestoreDefault();
+	char def[64];
+	if (GetPluginInfo(INVALID_HANDLE, PlInfo_Version, def, sizeof(def)) && !StrEqual(def, newValue)) convar.SetString(def,_,true);
 }
 public void OnConVarChanged_checkProfile(ConVar convar, const char[] oldValue, const char[] newValue) {
 	if (convar.BoolValue)
