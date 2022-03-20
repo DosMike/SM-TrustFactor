@@ -8,7 +8,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w10a"
+#define PLUGIN_VERSION "22w11a"
 
 public Plugin myinfo = {
 	name = "Trust Factor",
@@ -160,7 +160,7 @@ public void OnPluginStart() {
 }
 
 public void OnMapStart() {
-	CreateTimer(60.0, Timer_Playtime, _, TIMER_REPEAT);
+	CreateTimer(60.0, Timer_Playtime, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
 }
 
 public Action Timer_Playtime(Handle timer) {
