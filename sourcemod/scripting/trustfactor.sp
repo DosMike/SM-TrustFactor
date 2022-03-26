@@ -8,7 +8,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w11a"
+#define PLUGIN_VERSION "22w12a"
 
 public Plugin myinfo = {
 	name = "Trust Factor",
@@ -847,6 +847,13 @@ public any Native_ParseConditionString(Handle plugin, int numParams) {
 			reqflags |= optflags;
 			optflags = UNTRUSTED;
 		}
+	}
+	//dedupe optionals (already required) and recount
+	if (optflags && reqflags) {
+		optflags &=~ reqflags;
+		int max;
+		for (tmp = view_as<int>(optflags); tmp; tmp >>= 1) if (tmp & 1) max+=1;
+		if (ocount > max) ocount = max;
 	}
 	//create trustcondition "struct"
 	any data[3];
