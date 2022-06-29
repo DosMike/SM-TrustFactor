@@ -19,6 +19,8 @@ The following trust flags are possible:
 * Profile PoCBadge (`b`)  level for pillar of community badge
 * Vac Bans (`v`)  has/had no VAC bans on record
 * Economy/Trade Banned (`e`)  is currently not banned from trading
+* SBPP Game Bans (`a`)  has no more than the specified amount of SBPP game bans
+* SBPP Comm Bans (`c`)  has no more than the specified amount of SBPP comm bans
 
 The TrustLevel is simply the sum of all trust flags a player has (currently max 11)
 
@@ -57,6 +59,8 @@ The playtime value is store as client preference (same as !settings). Tipp: You 
 `sm_trustfactor_minpocprogress` requires the Pillar of Community Badge to have at least the specified level before it counts as trusted. If you set this to 0 it's ignored and the flag will always pass. If you did not enable `sm_trustfactor_checksteamlvl` it's recommended to set this to 0.
 
 `sm_trustfactor_minsteamlevel` requires the players profile to have at least the specified steam level for this flag to be set. If you set this to 0 it's ignored and the flag will always pass. If you did not enable `sm_trustfactor_checksteamlvl` it's recommended to set this to 0.
+
+If you're using SourceBans++ and the sbpp_checker module works, TrustFactor should automatically fetch client bans. sbpp_checker itself is NOT required, but uses the same queries/config for SB++ as TrustFactor. You can limit the amount of game and comm bans permitted using `sm_trustfactor_sbppbans` and `sm_trustfactor_sbppcomms`.
 
 ## Installing
 

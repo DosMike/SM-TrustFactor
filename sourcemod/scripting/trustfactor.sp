@@ -8,7 +8,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "22w12a"
+#define PLUGIN_VERSION "22w26a"
 
 public Plugin myinfo = {
 	name = "Trust Factor",
@@ -33,8 +33,8 @@ enum TrustFactors (<<=1) {
 	TrustCProfilePoCBadge, // b  progress for pillar of community badge
 	TrustNoVACBans,        // v  no active or passed VAC banns
 	TrustNotEconomyBanned, // e  not currently trade/economy banned
-	TrustSBPPGameBan,      // a  RESERVED has little to no sb game bans
-	TrustSBPPCommBan,      // c  RESERVED has little to no sb comm bans
+	TrustSBPPGameBan,      // a  has little to no sb game bans
+	TrustSBPPCommBan,      // c  has little to no sb comm bans
 }
 #define ALLTRUSTFACTORS (view_as<TrustFactors>(0x0fff))
 
@@ -67,8 +67,8 @@ enum struct TrustData {
 #define SetClientTrustData(%1,%2) client_trustData.SetArray(client_steamIds[(%1)], (%2), sizeof(TrustData))
 #define HookAndLoadConVar(%1,%2) { char def[256],val[256]; %1.AddChangeHook(%2); %1.GetDefault(def,256); %1.GetString(val,256); %2(%1,def,val); }
 
-static StringMap client_trustData;
-static char client_steamIds[MAXPLAYERS][MAX_STEAMID_LENGTH];
+StringMap client_trustData;
+char client_steamIds[MAXPLAYERS][MAX_STEAMID_LENGTH];
 static Cookie gCookiePlaytime = null;
 
 #define SWAPI_CHECK_PROFILE 1
@@ -79,12 +79,15 @@ static Cookie gCookiePlaytime = null;
 static int steamAppId, steamDlcId; //for game and premium dlc
 static char engineMeta[2][32];
 static int swapi_checks; //check flags for below Check* cvars
+static bool dep_SBPP; //gate sourcebans stuff behind dep check
 static char playerCacheUrl[PLATFORM_MAX_PATH]; //url to get stuff from
 static char playerCacheUserAgent[128];
 static int trust_communityLevel; //int
 static int trust_gametime;       //in hours
 static int trust_servertime;     //in minutes
 static int trust_pocbadge;       //level (0,1,2,3)
+static int trust_sbppbans;       //int
+static int trust_sbppcomms;      //int
 static int trust_donorflags;     //AdmFlag bit string
 static char trust_donorgroup[MAX_NAME_LENGTH]; //OverrideGroup for donor permissions
 static ConVar cvar_CheckProfile;    //check ISteamUser/GetPlayerSummaries for communityvisibilitystate==3, profilestate==1, timecreated
@@ -99,9 +102,13 @@ static ConVar cvar_TrustServertime;     //required on-server playtime to count a
 static ConVar cvar_TrustPoCBadge;       //required Pillar of Community badge progress to count as trusted
 static ConVar cvar_TrustDonorFlags;     //required SourceMod AdminFlags to count as trusted
 static ConVar cvar_TrustDonorGroup;     //required SourceMod Admin Group to count as trusted
+static ConVar cvar_TrustSBPPBans;       //maximum SBPP Bans to count as trusted
+static ConVar cvar_TrustSBPPComms;      //maximum SBPP Comm Bans to count as trusted
 static ConVar cvar_version;
 static GlobalForward fwdOnTrustLoaded;
 static GlobalForward fwdOnTrustChanged;
+
+#include "trustfactor_sbpp.sp"
 
 public void OnPluginStart() {
 	
@@ -136,6 +143,8 @@ public void OnPluginStart() {
 	cvar_TrustPoCBadge =       CreateConVar("sm_trustfactor_minpocprogress", "1", "Pillar of Community badge level required to flag Trustworthy, 0 to disable", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0, true, 3.0);
 	cvar_TrustDonorFlags =     CreateConVar("sm_trustfactor_donorflag", "z", "SourceMod AdminFlag to flag Trustworthy (Donors), empty to disable", FCVAR_HIDDEN|FCVAR_UNLOGGED);
 	cvar_TrustDonorGroup =     CreateConVar("sm_trustfactor_donorgroup", "", "SourceMod Admin Group name to flag Trustworthy (Donors), empty to disable", FCVAR_HIDDEN|FCVAR_UNLOGGED);
+	cvar_TrustSBPPBans =      CreateConVar("sm_trustfactor_sbppbans", "0", "Maximum number of SourceBans++ bans to flag Trustworthy", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0);
+	cvar_TrustSBPPComms =     CreateConVar("sm_trustfactor_sbppcomms", "0", "Maximum number of SourceBans++ comm bans to flag Trustworthy", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0);
 	HookAndLoadConVar(cvar_version, OnConVarChanged_locked)
 	HookAndLoadConVar(cvar_CheckProfile, OnConVarChanged_checkProfile)
 	HookAndLoadConVar(cvar_CheckSteamLevel, OnConVarChanged_checkSteamLvL)
@@ -148,6 +157,8 @@ public void OnPluginStart() {
 	HookAndLoadConVar(cvar_TrustPoCBadge, OnConVarChanged_trustPoCBadge)
 	HookAndLoadConVar(cvar_TrustDonorFlags, OnConVarChanged_trustDonorFlags)
 	HookAndLoadConVar(cvar_TrustDonorGroup, OnConVarChanged_trustDonorGroup)
+	HookAndLoadConVar(cvar_TrustSBPPBans, OnConVarChanged_trustSBPPBans)
+	HookAndLoadConVar(cvar_TrustSBPPComms, OnConVarChanged_trustSBPPComms)
 	AutoExecConfig();
 	
 	fwdOnTrustLoaded = new GlobalForward("OnClientTrustFactorLoaded", ET_Ignore, Param_Cell, Param_Cell);
@@ -159,7 +170,21 @@ public void OnPluginStart() {
 	ReloadAllPlayers();
 }
 
+public void OnAllPluginsLoaded() {
+	dep_SBPP = LibraryExists("sourcebans++");
+}
+public void OnLibraryAdded(const char[] name) {
+	if (StrEqual(name, "sourcebans++")) dep_SBPP = true;
+}
+public void OnLibraryRemoved(const char[] name) {
+	if (StrEqual(name, "sourcebans++")) dep_SBPP = false;
+}
+
+
 public void OnMapStart() {
+	if (dep_SBPP) {
+		SBPP_OnMapStart();
+	}
 	CreateTimer(60.0, Timer_Playtime, _, TIMER_REPEAT|TIMER_FLAG_NO_MAPCHANGE);
 }
 
@@ -260,7 +285,16 @@ public Action Command_CheckTrust(int client, int args) {
 			a = (swapi_checks & SWAPI_CHECK_BANS) ? (condition?2:0) : 1;
 			CReplyToCommand(client, "  Trade Banned: {%s}%s", colors[a], ynstr[condition?0:1]);
 			
-			CReplyToCommand(client, "  {gold}Trust Level: %d/11", cdata.trustLevel);
+			if (!dep_SBPP)
+				CReplyToCommand(client, "  SourceBans++: {darkgray}Not Available");
+			else {
+				condition = cdata.sbppGameBans <= trust_sbppbans;
+				CReplyToCommand(client, "  SB++ Bans: {%s}%d/%d", colors[condition?0:2], cdata.sbppGameBans, trust_sbppbans);
+				condition = cdata.sbppCommBans <= trust_sbppcomms;
+				CReplyToCommand(client, "  SB++ Bans: {%s}%d/%d", colors[condition?0:2], cdata.sbppCommBans, trust_sbppcomms);
+			}
+			
+			CReplyToCommand(client, "  {gold}Trust Level: %d/13", cdata.trustLevel);
 		}
 	}
 	return Plugin_Handled;
@@ -279,7 +313,7 @@ static void ReloadAllPlayers() {
 		if (!IsValidClient(client)) continue;
 		OnClientDisconnect(client);
 		if (IsClientAuthorized(client)) {
-			GetClientAuthId(client, AuthId_SteamID64, steamid, sizeof(steamid));
+			GetClientAuthId(client, AuthId_Steam2, steamid, sizeof(steamid));
 			OnClientAuthorized(client, steamid);
 			OnClientPostAdminCheck(client);
 		}
@@ -362,16 +396,15 @@ public void OnClientCookiesCached(int client) {
 	TrustData cdata;
 	char buffer[32];
 	int value;
-	bool loadingDone;
 	GetClientTrustData(client, cdata);
 	if (gCookiePlaytime != INVALID_HANDLE) {
 		gCookiePlaytime.Get(client, buffer, sizeof(buffer));
 		value = StringToInt(buffer);
 		cdata.playtime = value;
 	}
-	loadingDone = ((cdata.loaded |= LOADED_LOCALDATA) == LOADED_ALL);
+	cdata.loaded |= LOADED_LOCALDATA;
 	SetClientTrustData(client, cdata);
-	if (loadingDone) Notify_OnTrustFactorLoaded(client);
+	Notify_OnTrustFactorLoaded(client);
 }
 
 // -- steamworks api query --
@@ -410,7 +443,6 @@ public void OnProfileDataCached(Handle handle, bool failed, bool successfull, EH
 		delete handle;
 		return; 
 	}
-	bool loadingDone;
 	TrustData cdata;
 	GetClientTrustData(client, cdata);
 	if (!successfull || statusCode != k_EHTTPStatusCode200OK) {
@@ -448,20 +480,25 @@ public void OnProfileDataCached(Handle handle, bool failed, bool successfull, EH
 		}
 		delete handle;
 	}
-	loadingDone = ((cdata.loaded |= LOADED_PROFILEDATA) == LOADED_ALL);
+	cdata.loaded |= LOADED_PROFILEDATA;
 	SetClientTrustData(client, cdata);
-	if (loadingDone) Notify_OnTrustFactorLoaded(client);
+	Notify_OnTrustFactorLoaded(client);
 }
 
 // -- sourcebans --
 
 public bool SourceBansQueryClient(int client, const char[] steam2) {
 	if (!IsValidClient(client)) return;
-	TrustData cdata;
-	GetClientTrustData(client, cdata);
-	cdata.loaded |= LOADED_SOURCEBANS; //pretend we're done
-	SetClientTrustData(client, cdata);
-	if (cdata.loaded == LOADED_ALL) UpdateTrustfactor(client);
+	if (dep_SBPP) {
+		SBPP_OnClientAuthorized(client, steam2);
+	} else {
+		//pretend we loaded sourcebans
+		TrustData cdata;
+		GetClientTrustData(client, cdata);
+		cdata.loaded |= LOADED_SOURCEBANS;
+		SetClientTrustData(client, cdata);
+		Notify_OnTrustFactorLoaded(client);
+	}
 	return;
 }
 
@@ -533,15 +570,25 @@ public void OnConVarChanged_trustDonorGroup(ConVar convar, const char[] oldValue
 	strcopy(trust_donorgroup, sizeof(trust_donorgroup), newValue);
 	UpdateTrustfactorAll();
 }
+public void OnConVarChanged_trustSBPPBans(ConVar convar, const char[] oldValue, const char[] newValue) {
+	trust_sbppbans = convar.IntValue;
+	UpdateTrustfactorAll();
+}
+public void OnConVarChanged_trustSBPPComms(ConVar convar, const char[] oldValue, const char[] newValue) {
+	trust_sbppcomms = convar.IntValue;
+	UpdateTrustfactorAll();
+}
 
-static void Notify_OnTrustFactorLoaded(int client) {
-	UpdateTrustfactor(client,false);
+void Notify_OnTrustFactorLoaded(int client) {
 	TrustData data;
+	UpdateTrustfactor(client,false);
 	GetClientTrustData(client,data);
-	Call_StartForward(fwdOnTrustLoaded);
-	Call_PushCell(client);
-	Call_PushCell(data.trustFlags);
-	Call_Finish();
+	if (data.loaded == LOADED_ALL) {
+		Call_StartForward(fwdOnTrustLoaded);
+		Call_PushCell(client);
+		Call_PushCell(data.trustFlags);
+		Call_Finish();
+	}
 }
 
 // -- utils --
@@ -582,6 +629,8 @@ static void UpdateTrustfactor(int client, bool broadcast=true) {
 	if (cdata.communityLevel > trust_communityLevel) { cdata.trustFlags |= TrustCProfileLevel; cdata.trustLevel++; }
 	if (!cdata.vacBanned) { cdata.trustFlags |= TrustNoVACBans; cdata.trustLevel++; }
 	if (!cdata.tradeBanned) { cdata.trustFlags |= TrustNotEconomyBanned; cdata.trustLevel++; }
+	if (dep_SBPP && cdata.sbppGameBans <= trust_sbppbans) { cdata.trustFlags |= TrustSBPPGameBan; cdata.trustLevel++; }
+	if (dep_SBPP && cdata.sbppCommBans <= trust_sbppcomms) { cdata.trustFlags |= TrustSBPPCommBan; cdata.trustLevel++; }
 	if (cdata.isDonor) { cdata.trustFlags |= TrustDonorFlag; cdata.trustLevel++; }
 	SetClientTrustData(client, cdata);
 	if (broadcast && (previousFlags != cdata.trustFlags || previousLevel != cdata.trustLevel)) {
@@ -599,7 +648,7 @@ static int SubStrToInt(const char[] str, int offset, int len, int radix=16) {
 	return StringToInt(buf, radix);
 }
 
-static bool IsValidClient(int client) {
+bool IsValidClient(int client) {
 	return 1<=client<=MaxClients && IsClientConnected(client) &&
 		!IsFakeClient(client) && !IsClientReplay(client) && !IsClientSourceTV(client);
 }
@@ -658,6 +707,8 @@ static TrustFactors ParseTrustString(const char[] string, int& read) {
 			case 'b': ret |= TrustCProfilePoCBadge;
 			case 'v': ret |= TrustNoVACBans;
 			case 'e': ret |= TrustNotEconomyBanned;
+			case 'a': ret |= TrustSBPPGameBan;
+			case 'c': ret |= TrustSBPPCommBan;
 			default: break; //breaks for
 		}
 	}
@@ -682,6 +733,8 @@ static int TrustFactorString(TrustFactors flags, char[] buffer, int maxLength) {
 				case TrustCProfilePoCBadge: fchar = 'b';
 				case TrustNoVACBans: fchar = 'v';
 				case TrustNotEconomyBanned: fchar = 'e';
+				case TrustSBPPGameBan: fchar = 'a';
+				case TrustSBPPCommBan: fchar = 'c';
 				default: fchar = 0;
 			}
 			if (fchar) {
@@ -756,6 +809,8 @@ public any Native_GetTrustValue(Handle plugin, int numParams) {
 		case TrustCProfilePoCBadge: return data.badgeLevel;
 		case TrustNoVACBans: return data.vacBanned;
 		case TrustNotEconomyBanned: return data.tradeBanned;
+		case TrustSBPPGameBan: return data.sbppGameBans;
+		case TrustSBPPCommBan: return data.sbppCommBans;
 		default: ThrowNativeError(SP_ERROR_PARAM, "Specified number of trust factors != 1");
 	}
 	return 0;
