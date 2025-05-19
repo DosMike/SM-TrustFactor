@@ -1,7 +1,10 @@
 #include <sourcemod>
 #include <clients>
 #include <clientprefs>
-#include <SteamWorks>
+#undef REQUIRE_EXTENSIONS
+#tryinclude <SteamWorks> ///< _SteamWorks_Included
+#tryinclude <ripext> ///< _ripext_included_
+#define REQUIRE_EXTENSIONS
 
 #include <multicolors>
 
@@ -10,7 +13,7 @@
 #pragma newdecls required
 #pragma semicolon 1
 
-#define PLUGIN_VERSION "24w19a"
+#define PLUGIN_VERSION "25w21a"
 
 public Plugin myinfo = {
 	name = "Trust Factor",
@@ -82,6 +85,8 @@ static int steamAppId, steamDlcId; //for game and premium dlc
 static char engineMeta[2][32];
 static int swapi_checks; //check flags for below Check* cvars
 static bool dep_SBPP; //gate sourcebans stuff behind dep check
+static bool dep_SteamWorks;
+static bool dep_RIPext;
 static char playerCacheUrl[PLATFORM_MAX_PATH]; //url to get stuff from
 static char playerCacheUserAgent[128];
 static int trust_communityLevel; //int
@@ -113,9 +118,8 @@ static GlobalForward fwdOnTrustChanged;
 bool b_lateLoad;
 
 public void OnPluginStart() {
-	
 	LoadTranslations("common.phrases");
-	
+
 	GameData gamedata = new GameData("trustfactor.games");
 	if (gamedata != INVALID_HANDLE) {
 		char buffer[64];
@@ -128,11 +132,11 @@ public void OnPluginStart() {
 	GetSteamInf();
 	GenerateUserAgent();
 	PrintToServer("[TrustFactor] Detected: %s", playerCacheUserAgent);
-	
+
 	client_trustData = new StringMap();
-	
+
 	gCookiePlaytime = new Cookie(COOKIE_TRUST_PLAYTIME, "Playtime as tracked for trust factor", CookieAccess_Private);
-	
+
 	cvar_version =             CreateConVar("sm_trustfactor_version", PLUGIN_VERSION, "TrustFactor Version", FCVAR_NOTIFY|FCVAR_DONTRECORD);
 	cvar_CheckProfile =        CreateConVar("sm_trustfactor_checkprofile", "0", "Request steam profile to be checked", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0, true, 1.0);
 	cvar_CheckSteamLevel =     CreateConVar("sm_trustfactor_checksteamlvl", "0", "Request steam community level and poc badge level to be checked", FCVAR_HIDDEN|FCVAR_UNLOGGED, true, 0.0, true, 1.0);
@@ -162,18 +166,26 @@ public void OnPluginStart() {
 	HookAndLoadConVar(cvar_TrustSBPPBans, OnConVarChanged_trustSBPPBans)
 	HookAndLoadConVar(cvar_TrustSBPPComms, OnConVarChanged_trustSBPPComms)
 	AutoExecConfig();
-	
+
 	fwdOnTrustLoaded = new GlobalForward("OnClientTrustFactorLoaded", ET_Ignore, Param_Cell, Param_Cell);
 	fwdOnTrustChanged = new GlobalForward("OnClientTrustFactorChanged", ET_Ignore, Param_Cell, Param_Cell, Param_Cell);
-	
+
 	RegAdminCmd("sm_checktrust", Command_CheckTrust, ADMFLAG_GENERIC, "Read all trust values for a player");
 	RegAdminCmd("sm_reload_playertrust", Command_RecachePlayers, ADMFLAG_BAN, "Reload trust cache for players already connected");
-	
+
 	if (b_lateLoad) ReloadAllPlayers();
 }
 
 public void OnAllPluginsLoaded() {
 	dep_SBPP = LibraryExists("sourcebans++");
+	char buffer[4];
+	dep_SteamWorks = GetExtensionFileStatus("SteamWorks.ext", buffer, 0) == 1;
+	dep_RIPext = GetExtensionFileStatus("rip.ext", buffer, 0) == 1;
+
+	PrintToServer("[TrustFactor] Detected Dependencies: SourceBans++ %s, SteamWorks %s, REST in Pawn %s",
+		(dep_SBPP ? "yes" : "no"),
+		(dep_SteamWorks ? "yes" : "no"),
+		(dep_RIPext ? "yes" : "no"));
 }
 public void OnLibraryAdded(const char[] name) {
 	if (StrEqual(name, "sourcebans++")) dep_SBPP = true;
@@ -231,60 +243,60 @@ public Action Command_CheckTrust(int client, int args) {
 			char ynstr[3][8] = { "Yes", "No", "Unknown" };
 			bool condition;
 			int a,b;
-			
+
 			if (steamDlcId) {
 				condition = cdata.premium;
 				CReplyToCommand(client, "  Is Free2Play: {%s}%s", colors[condition?0:2], ynstr[condition?1:0]);
 			}
-			
+
 			condition = cdata.isDonor;
 			CReplyToCommand(client, "  Is Donator: {%s}%s", colors[condition?0:2], ynstr[condition?0:1]);
-			
+
 			condition = cdata.playtime >= trust_servertime;
 			CReplyToCommand(client, "  Playtime Server: {%s}%d/%d min", colors[condition?0:2], cdata.playtime, trust_servertime);
-			
+
 			condition = cdata.gametime >= trust_gametime;
 			if (swapi_checks & SWAPI_CHECK_GAMETIME)
 				CReplyToCommand(client, "  Playtime Global: {%s}%d/%d hr", colors[condition?0:2], cdata.gametime, trust_gametime);
 			else
 				CReplyToCommand(client, "  Playtime Global: {gold}%d hr", cdata.gametime, trust_gametime);
-			
+
 			condition = cdata.profilePublic;
 			a = (swapi_checks & SWAPI_CHECK_PROFILE) ? (condition?0:2) : 1;
 			CReplyToCommand(client, "  Public Profile: {%s}%s", colors[a], ynstr[condition?0:1]);
-			
+
 			condition = cdata.profileSetup;
 			a = (swapi_checks & SWAPI_CHECK_PROFILE) ? (condition?0:2) : 1;
 			CReplyToCommand(client, "  Profile Set up: {%s}%s", colors[a], ynstr[condition?0:1]);
-			
+
 			if (cdata.profileAge) { a=0;b=1; }
 			else if (cdata.profilePublic) { a=3;b=2; }
 			else { a=2;b=0; }
 			if ((swapi_checks & SWAPI_CHECK_PROFILE) && a==3) a=1;
 			CReplyToCommand(client, "  Profile New: {%s}%s", colors[a], ynstr[b]);
-			
+
 			if (trust_communityLevel<1)
 				CReplyToCommand(client, "  Profile Level: {gold}%d", cdata.communityLevel);
 			else {
 				condition = cdata.communityLevel >= trust_communityLevel;
 				CReplyToCommand(client, "  Profile Level: {%s}%d/%d", colors[condition?0:2], cdata.communityLevel, trust_communityLevel);
 			}
-			
+
 			if (trust_communityLevel<1)
 				CReplyToCommand(client, "  Community Badge: {gold}%d", cdata.badgeLevel);
 			else {
 				condition = cdata.badgeLevel >= trust_pocbadge;
 				CReplyToCommand(client, "  Community Badge: {%s}%d/%d", colors[condition?0:2], cdata.badgeLevel, trust_pocbadge);
 			}
-			
+
 			condition = cdata.vacBanned;
 			a = (swapi_checks & SWAPI_CHECK_BANS) ? (condition?2:0) : 1;
 			CReplyToCommand(client, "  VAC Bans on Record: {%s}%s", colors[a], ynstr[condition?0:1]);
-			
+
 			condition = cdata.tradeBanned;
 			a = (swapi_checks & SWAPI_CHECK_BANS) ? (condition?2:0) : 1;
 			CReplyToCommand(client, "  Trade Banned: {%s}%s", colors[a], ynstr[condition?0:1]);
-			
+
 			if (!dep_SBPP)
 				CReplyToCommand(client, "  SourceBans++: {darkgray}Not Available");
 			else {
@@ -293,7 +305,7 @@ public Action Command_CheckTrust(int client, int args) {
 				condition = cdata.sbppCommBans <= trust_sbppcomms;
 				CReplyToCommand(client, "  SB++ Mutes: {%s}%d/%d", colors[condition?0:2], cdata.sbppCommBans, trust_sbppcomms);
 			}
-			
+
 			CReplyToCommand(client, "  {gold}Trust Level: %d/13", cdata.trustLevel);
 		}
 	}
@@ -328,13 +340,13 @@ static void ReloadAllPlayers() {
 static void EnsureClientData(int client) {
 	//already loaded, we have a steamid set
 	if (client_steamIds[client][0]) return;
-	
+
 	//i've seen bots use steamid inited to 0 in tf2, ignore all bots
 	char auth[MAX_STEAMID_LENGTH];
 	if (!IsValidClient(client)) {
 		return;
 	}
-	
+
 	//prepare player structs
 	GetClientAuthId(client, AuthId_SteamID64, client_steamIds[client], MAX_STEAMID_LENGTH);
 	TrustData cdata;
@@ -349,16 +361,19 @@ public void OnClientConnected(int client)
 public void OnClientPostAdminCheck(int client) {
 	EnsureClientData(client);
 	if (!IsValidClient(client)) return;
-	
+
 	TrustData cdata;
 	GetClientTrustData(client, cdata);
 	cdata.isDonor = CheckClientAdminFlags(client);
-	if (steamDlcId) cdata.premium = SteamWorks_HasLicenseForApp(client, steamDlcId) == k_EUserHasLicenseResultHasLicense;
+	if (!dep_SteamWorks) cdata.premium = false; // required to test
+	else if (steamDlcId) cdata.premium = SteamWorks_HasLicenseForApp(client, steamDlcId) == k_EUserHasLicenseResultHasLicense;
 	cdata.loaded |= LOADED_PREMIUM;
 	SetClientTrustData(client, cdata);
 	//can' be done loading here yet
-	
-	SteamWorksQueryClient(client);
+
+	if (dep_SteamWorks) SteamWorksQueryClient(client);
+	else if (dep_RIPext) RIPextQueryClient(client);
+	else DontQueryClient(client);
 }
 
 public void OnRebuildAdminCache(AdminCachePart part) {
@@ -387,7 +402,7 @@ public void OnClientDisconnect(int client) {
 public void OnClientCookiesCached(int client) {
 	EnsureClientData(client);
 	if (!IsValidClient(client)) return;
-	
+
 	TrustData cdata;
 	char buffer[32];
 	int value;
@@ -402,7 +417,53 @@ public void OnClientCookiesCached(int client) {
 	Notify_OnTrustFactorLoaded(client);
 }
 
-// -- steamworks api query --
+// -- steam api helper --
+
+static void ProcessWebValue(int client, const char[] value)
+{
+	TrustData cdata;
+	GetClientTrustData(client, cdata);
+
+	int contentLength = strlen(value);
+	int version = SubStrToInt(value,0,2);
+	if (version == 1 && contentLength >= 16) {
+		int flags = SubStrToInt(value,2,2);
+		cdata.profileSetup =  (flags & 0x01) != 0;
+		cdata.profilePublic = (flags & 0x02) != 0;
+		cdata.profileAge =    (flags & 0x04) != 0;
+		cdata.badgeLevel =    (flags & 0xf0) >> 4;
+		cdata.communityLevel = SubStrToInt(value,4,4);
+		cdata.gametime = SubStrToInt(value,8,8);
+		cdata.vacBanned = cdata.tradeBanned = false; //no data
+	} else if (version == 2 && contentLength >= 18) {
+		int flags = SubStrToInt(value,2,2);
+		cdata.profileSetup =  (flags & 0x01) != 0;
+		cdata.profilePublic = (flags & 0x02) != 0;
+		cdata.profileAge =    (flags & 0x04) != 0;
+		cdata.vacBanned =     (flags & 0x08) != 0;
+		cdata.tradeBanned =   (flags & 0x10) != 0;
+		cdata.badgeLevel =    SubStrToInt(value,4,2);
+		cdata.communityLevel = SubStrToInt(value,6,4);
+		cdata.gametime = SubStrToInt(value,10,8);
+	} else {
+		PrintToServer("[TrustFactor] Error or proxy response version not supported");
+	}
+
+	cdata.loaded |= LOADED_PROFILEDATA;
+	SetClientTrustData(client, cdata);
+	Notify_OnTrustFactorLoaded(client);
+}
+static void SkipWebData(int client)
+{
+
+	TrustData cdata;
+	GetClientTrustData(client, cdata);
+	cdata.loaded |= LOADED_PROFILEDATA;
+	SetClientTrustData(client, cdata);
+	Notify_OnTrustFactorLoaded(client);
+}
+
+// -- steamworks api query : steamworks --
 
 static void SteamWorksQueryClient(int client) {
 	//manually "finish" profile data if web disabled
@@ -414,11 +475,11 @@ static void SteamWorksQueryClient(int client) {
 		if (cdata.loaded == LOADED_ALL) UpdateTrustfactor(client);
 		return;
 	}
-	
+
 	char buffer[32];
-//	PrintToServer("[Trustfactor] Connecting with cache at %s for %N: %s, %d, %d", playerCacheUrl, client, client_steamIds[client], steamAppId, swapi_checks);
+//	PrintToServer("[Trustfactor] SteamWorkds : Connecting with cache at %s for %N: %s, %d, %d", playerCacheUrl, client, client_steamIds[client], steamAppId, swapi_checks);
 	Handle request = SteamWorks_CreateHTTPRequest(k_EHTTPMethodGET, playerCacheUrl);
-	SteamWorks_SetHTTPRequestNetworkActivityTimeout(request, 1000);
+	SteamWorks_SetHTTPRequestNetworkActivityTimeout(request, 10_000);
 	SteamWorks_SetHTTPRequestUserAgentInfo(request, playerCacheUserAgent);
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "steamId", client_steamIds[client]);
 	Format(buffer, sizeof(buffer), "%i", steamAppId);
@@ -426,58 +487,92 @@ static void SteamWorksQueryClient(int client) {
 	Format(buffer, sizeof(buffer), "%i", swapi_checks);
 	SteamWorks_SetHTTPRequestGetOrPostParameter(request, "cdata", buffer);
 	SteamWorks_SetHTTPRequestHeaderValue(request, "X-Trustfactor", PLUGIN_VERSION);
+	SteamWorks_SetHTTPRequestHeaderValue(request, "Accept", "text/plain");
 	SteamWorks_SetHTTPRequestContextValue(request, GetClientUserId(client));
-	SteamWorks_SetHTTPCallbacks(request, OnProfileDataCached);
+	SteamWorks_SetHTTPCallbacks(request, OnProfileDataCached_SW);
 	SteamWorks_SendHTTPRequest(request);
 }
 
-public void OnProfileDataCached(Handle handle, bool failed, bool successfull, EHTTPStatusCode statusCode, int userId) {
+public void OnProfileDataCached_SW(Handle handle, bool failed, bool successfull, EHTTPStatusCode statusCode, int userId) {
 	int client = GetClientOfUserId(userId);
 	if (!IsValidClient(client)) {
 		//client disconnected, we don't care anymore
 		delete handle;
-		return; 
+		return;
 	}
-	TrustData cdata;
-	GetClientTrustData(client, cdata);
+
 	if (!successfull || statusCode != k_EHTTPStatusCode200OK) {
 		PrintToServer("[TrustFactor] Proxy response failed for %N", client);
+		SkipWebData(client);
 		if (successfull) delete handle;
 	} else {
 		int contentLength;
 		if (SteamWorks_GetHTTPResponseBodySize(handle, contentLength)) {
 			char buffer[128];
-			SteamWorks_GetHTTPResponseBodyData(handle, buffer, contentLength);
-			
-			int version = SubStrToInt(buffer,0,2);
-			if (version == 1 && contentLength >= 16) {
-				int flags = SubStrToInt(buffer,2,2);
-				cdata.profileSetup =  (flags & 0x01) != 0;
-				cdata.profilePublic = (flags & 0x02) != 0;
-				cdata.profileAge =    (flags & 0x04) != 0;
-				cdata.badgeLevel =    (flags & 0xf0) >> 4;
-				cdata.communityLevel = SubStrToInt(buffer,4,4);
-				cdata.gametime = SubStrToInt(buffer,8,8);
-				cdata.vacBanned = cdata.tradeBanned = false; //no data
-			} else if (version == 2 && contentLength >= 18) {
-				int flags = SubStrToInt(buffer,2,2);
-				cdata.profileSetup =  (flags & 0x01) != 0;
-				cdata.profilePublic = (flags & 0x02) != 0;
-				cdata.profileAge =    (flags & 0x04) != 0;
-				cdata.vacBanned =     (flags & 0x08) != 0;
-				cdata.tradeBanned =   (flags & 0x10) != 0;
-				cdata.badgeLevel =    SubStrToInt(buffer,4,2);
-				cdata.communityLevel = SubStrToInt(buffer,6,4);
-				cdata.gametime = SubStrToInt(buffer,10,8);
-			} else {
-				PrintToServer("[TrustFactor] Proxy response version not supported");
-			}
+			SteamWorks_GetHTTPResponseBodyData(handle, buffer, (contentLength<sizeof(buffer) ? contentLength : sizeof(buffer)));
+
+			ProcessWebValue(client, buffer);
+		} else {
+			SkipWebData(client);
 		}
 		delete handle;
 	}
-	cdata.loaded |= LOADED_PROFILEDATA;
-	SetClientTrustData(client, cdata);
-	Notify_OnTrustFactorLoaded(client);
+}
+
+// -- steamworks api query : ripext--
+
+static void RIPextQueryClient(int client) {
+	//manually "finish" profile data if web disabled
+	if (playerCacheUrl[0]==0 || swapi_checks==0) {
+		TrustData cdata;
+		GetClientTrustData(client, cdata);
+		cdata.loaded |= LOADED_PROFILEDATA;
+		SetClientTrustData(client, cdata);
+		if (cdata.loaded == LOADED_ALL) UpdateTrustfactor(client);
+		return;
+	}
+
+//	PrintToServer("[Trustfactor] RIPext : Connecting with cache at %s for %N: %s, %d, %d", playerCacheUrl, client, client_steamIds[client], steamAppId, swapi_checks);
+	HTTPRequest request = new HTTPRequest(playerCacheUrl);
+	request.ConnectTimeout = 10;
+	request.Timeout = 10;
+	request.SetHeader("User-Agent", "%s", playerCacheUserAgent);
+	request.SetHeader("X-Trustfactor", "%s", PLUGIN_VERSION);
+	request.SetHeader("Accept", "application/json");
+	request.AppendQueryParam("steamId", "%s", client_steamIds[client]);
+	request.AppendQueryParam("appId", "%i", steamAppId);
+	request.AppendQueryParam("cdata", "%i", swapi_checks);
+	request.Get(OnProfileDataCached_RIP, GetClientUserId(client));
+}
+
+void OnProfileDataCached_RIP(HTTPResponse response, any userId, const char[] error)
+{
+	int client = GetClientOfUserId(userId);
+	if (!IsValidClient(client)) {
+		//client disconnected, we don't care anymore
+		return;
+	}
+
+	if (error[0] != 0) {
+		LogError("[TrustFactor] Failed to query Steam API using RIPExt: %s", error);
+		SkipWebData(client);
+	} else if (response.Status != HTTPStatus_OK) {
+		LogError("[TrustFactor] Failed to query Steam API using RIPExt: http.cat/%d", response.Status);
+		SkipWebData(client);
+	} else {
+		char buffer[128];
+		if (view_as<JSONObject>(response.Data).GetString("value", buffer, sizeof(buffer))) {
+			ProcessWebValue(client, buffer);
+		} else {
+			SkipWebData(client);
+		}
+	}
+}
+
+// -- steamworks api query : skipped --
+
+static void DontQueryClient(int client) {
+	SkipWebData(client);
 }
 
 // -- sourcebans --
@@ -485,7 +580,7 @@ public void OnProfileDataCached(Handle handle, bool failed, bool successfull, EH
 public void SBPP_CheckerClientBanCheckPost(int client) {
 	EnsureClientData(client);
 	if (!IsValidClient(client)) return;
-	
+
 	TrustData cdata;
 	GetClientTrustData(client, cdata);
 	cdata.sbppGameBans = SBPP_CheckerGetClientsBans(client);
@@ -657,7 +752,7 @@ static bool GetTrustClient(int client, TrustData data) {
 static void GetSteamInf() {
     File file = OpenFile("steam.inf", "r");
     if(file == INVALID_HANDLE) return;
-    
+
     char line[128], parts[2][64];
     while(file.ReadLine(line, sizeof(line))) {
         ExplodeString(line, "=", parts, sizeof(parts), sizeof(parts[]));
@@ -671,7 +766,7 @@ static void GetSteamInf() {
         	TrimString(engineMeta[1]);
         }
     }
-    
+
     CloseHandle(file);
 }
 
@@ -679,7 +774,7 @@ static void GenerateUserAgent() {
 	//fetch server and sourcemod versions to build a useragent string
 	//this might seem unneccessarily complex, but can be a very good tool to e.g. block broken versions from accessing a server
 	char smver[64];
-	
+
 	FindConVar("sourcemod_version").GetString(smver, sizeof(smver));
 	//build useragent
 	Format(playerCacheUserAgent, sizeof(playerCacheUserAgent), "TrustFactor/%s SourceMod/%s (EngineVersion %i) srcds/%s (AppId %i/%s)", PLUGIN_VERSION, smver, GetEngineVersion(), engineMeta[0], steamAppId, engineMeta[1]);
@@ -758,7 +853,7 @@ static bool CheckClientAdminFlags(int client) {
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max) {
 	b_lateLoad = late;
-	
+
 	CreateNative("IsClientTrustFactorLoaded", Native_IsLoaded);
 	CreateNative("GetClientTrustFactors", Native_GetFactor);
 	CreateNative("GetClientTrustLevel", Native_GetLevel);
@@ -767,9 +862,9 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("WriteTrustFactorChars", Native_WriteFlagString);
 	CreateNative("ParseTrustConditionStringRaw", Native_ParseConditionString);
 	CreateNative("ComposeTrustConditionStringRaw", Native_ComposeConditionFlagString);
-	
+
 	RegPluginLibrary("trustfactor");
-	
+
 	return APLRes_Success;
 }
 
@@ -859,7 +954,7 @@ public any Native_ParseConditionString(Handle plugin, int numParams) {
 	int read, tmp, ocount;
 	bool readOptionals;
 	TrustFactors reqflags, optflags;
-	
+
 	if (buf[0] != 0) { //shortcut for empty string
 		if (buf[0]=='*') {
 			reqflags = ALLTRUSTFACTORS;
@@ -922,7 +1017,7 @@ public any Native_ComposeConditionFlagString(Handle plugin, int numParams) {
 	any data[3];
 	GetNativeArray(1, data, 3);
 	int maxlen = GetNativeCell(3);
-	
+
 	//prepare components from trust condition
 	char tmp[2][16];
 	bool reqs,opts;
@@ -937,7 +1032,7 @@ public any Native_ComposeConditionFlagString(Handle plugin, int numParams) {
 		opts = true;
 	}
 	int optc = data[2];
-	
+
 	//preprocess output
 	int max;
 	for (int temp=view_as<int>(data[1]); temp; temp>>=1) if (temp&1) max++;
@@ -947,7 +1042,7 @@ public any Native_ComposeConditionFlagString(Handle plugin, int numParams) {
 		optc = -1;
 	}
 	if (optc == 0) opts=false; //no optionals are required -> skip optionals
-	
+
 	//build string
 	int written;
 	if (!reqs && !opts) {
