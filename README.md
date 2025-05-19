@@ -93,8 +93,11 @@ The PHP script will cache player data for 12 hours, so if a player for example b
 
 ## Dependencies
 
-* Requires SteamWorks for networking (https://github.com/KyleSanderson/SteamWorks)
-* MultiColor is required for compile only (https://github.com/Bara/Multi-Colors)
+* RIPext - optional, for networking (https://github.com/ErikMinekus/sm-ripext)
+  This is used preferably over SteamWorks, but can not load Free2Play status.
+* SteamWorks - optional, for networking (https://github.com/KyleSanderson/SteamWorks)
+* MultiColor - compile only (https://github.com/Bara/Multi-Colors)
+* SourceBans Checker PR#894 (https://github.com/sbpp/sourcebans-pp/pull/894)
 
 ## Plugin Devs
 

@@ -3,21 +3,21 @@
 #endif
 #define _trustfactor_included
 
-enum TrustFactors (<<=1) {
-	UNTRUSTED = 0,         //can be read as "allows untrusted to do x"
-	TrustPlaytime = 1,     //playtime on server network
-	TrustPremium,          //is using free2play account
-	TrustDonorFlag,        //player is donor / has spent money on the server
-	TrustCProfilePublic,   //is community profile public
-	TrustCProfileSetup,    //is community profile set up
-	TrustCProfileLevel,    //community profile level
-	TrustCProfileGametime, //total playtime for the game
-	TrustCProfileAge,      //profile age in months
-	TrustCProfilePoCBadge, //progress for pillar of community badge
-	TrustNoVACBans,        //no active or passed VAC banns
-	TrustNotEconomyBanned, //not currently trade/economy banned
-	TrustSBPPGameBan,      //has little to no sb game bans
-	TrustSBPPCommBan,      //has little to no sb comm bans
+enum TrustFactors {
+	UNTRUSTED = 0,                //can be read as "allows untrusted to do x"
+	TrustPlaytime = 1,            //playtime on server network
+	TrustPremium = 2,             //is using free2play account
+	TrustDonorFlag = 4,           //player is donor / has spent money on the server
+	TrustCProfilePublic = 8,      //is community profile public
+	TrustCProfileSetup = 16,      //is community profile set up
+	TrustCProfileLevel = 32,      //community profile level
+	TrustCProfileGametime = 64,   //total playtime for the game
+	TrustCProfileAge = 128,       //profile age in months
+	TrustCProfilePoCBadge = 256,  //progress for pillar of community badge
+	TrustNoVACBans = 512,         //no active or passed VAC banns
+	TrustNotEconomyBanned = 1024, //not currently trade/economy banned
+	TrustSBPPGameBan = 2048,      //has little to no sb game bans
+	TrustSBPPCommBan = 4096,      //has little to no sb comm bans
 }
 
 /**
@@ -43,7 +43,7 @@ forward void OnClientTrustFactorChanged(int client, TrustFactors oldFactors, Tru
 /**
  * Check if the trust factor for this client is available.
  *
- * @param client -the client to check
+ * @param client - the client to check
  * @return true if player is valid, no bot and enabled trustfactors were loaded
  */
 native bool IsClientTrustFactorLoaded(int client);

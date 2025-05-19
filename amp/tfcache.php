@@ -27,6 +27,11 @@ $headers = apache_request_headers();
 if (empty($headers['X-Trustfactor']) || !cget('steamId') || !cget('appId') || !cget('cdata')) {
 	cancel("Format");
 }
+if (str_contains($headers['Accept'], 'application/json')) {
+	$resultType = "json";
+} else {
+	$resultType = "plain";
+}
 // set charset
 $sql->set_charset('utf8mb4');
 if ($sql->errno) {
@@ -212,7 +217,14 @@ if (($cdata & 8) && $missing[2]) { //we have updated game data
 	);
 }
 
-printf("02%02X%02X%04X%08X", $vprofile&0xFF, $cache['pocbadge']&0xFF, $cache['level'], $cache['gametime']);
+
+$responseData = sprintf("02%02X%02X%04X%08X", $vprofile&0xFF, $cache['pocbadge']&0xFF, $cache['level'], $cache['gametime']);
+if ($resultType == "json") {
+	echo json_encode(["value" => $responseData]);
+} else {
+	echo $responseData;
+}
+
 
 // $ru = getrusage();
 // echo "<br>This process used " . rutime($ru, $rustart, "utime") . " ms for its computations\n";
